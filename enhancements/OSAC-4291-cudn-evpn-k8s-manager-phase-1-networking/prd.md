@@ -1,143 +1,77 @@
-# CUDN EVPN K8s Manager Phase 1 Networking: Single-Cluster VM-to-Fabric Bridging
+# CUDN EVPN Kubernetes Manager: VM-to-Fabric Networking
 
-| Field       | Value   |
-|-------------|---------|
-| Author(s)   | Benny Kopilov |
-| Jira        | https://redhat.atlassian.net/browse/OSAC-4291 |
-| Date        | 2026-08-30 |
+| Field | Value |
+|---|---|
+| Author(s) | Benny Kopilov |
+| Jira | [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) |
+| Alignment work | [OSAC-6758](https://redhat.atlassian.net/browse/OSAC-6758), under [OSAC-6757](https://redhat.atlassian.net/browse/OSAC-6757) |
+| Date | 2026-10-25 |
 
-This Phase 1 PRD inherits the [Unified Networking deployment support
-boundary](/enhancements/OSAC-1433-unified-networking/prd.md#deployment-support-boundary):
-the deployment must be connected, and air-gapped or disconnected networking
-deployments are not supported.
-
-This Phase 1 PRD also inherits the [Unified Networking hub support
-boundary](/enhancements/OSAC-1433-unified-networking/prd.md#networking-hub-support-boundary):
-OSAC networking supports exactly one provider-owned hub per deployment.
-Multi-hub networking placement, cross-hub resource coordination, and
-cross-hub network connectivity are unsupported. This boundary applies only to
-the networking area and does not define hub behavior for other OSAC areas.
-Multiple hosting/workload clusters remain supported where a networking feature
-explicitly specifies them.
+This revision follows the approved [networking contract in PR #357](https://github.com/osac-project/enhancement-proposals/pull/357) and its Unified Networking and VMaaS requirements, with the user-requested route-target compatibility amendment from [osac PR #1971](https://github.com/osac-project/osac/pull/1971) and the shared namespace lifecycle proposed for shared-contract review. Technical decisions and superseded clarifications are recorded in [clarifications](clarifications.md); implementation and evidence are described in the [design](design.md). These proposals do not change PR #357's approval status.
 
 ## Problem Statement
 
-OSAC runs VMs on OpenShift using KubeVirt, which encapsulates each VM in a pod whose networking is managed by OVN-Kubernetes. By default, VM IP addresses exist only within the OVN overlay and are not visible on the physical fabric. This prevents VMs from being first-class fabric participants — they cannot share the same L2 subnet with bare-metal servers, cannot be reached directly from the fabric, and cannot leverage the fabric's multi-tenancy and routing capabilities.
-
-Without a k8s manager that bridges VMs to the fabric, tenants cannot deploy workloads that span VMs and bare-metal hosts in the same subnet. The CUDN LocalNet approach (OSAC-1511) has been frozen in favor of OVN EVPN, which provides better scalability and multi-cluster support. [Clarify: R1.Q3]
-
-The OVN EVPN spike (OSAC-1717) validated the technical approach: VMs can join the fabric via BGP EVPN route advertisements, enabling L2 same-subnet and L3 cross-subnet reachability. Phase 1 delivers single-cluster EVPN bridging with a constraint that OVN-Kubernetes does not currently route between separate CUDNs on the same cluster (the Connectors feature is pending). [Clarify: R1.Q4]
+OSAC has an EVPN manager that creates and deletes an overlay network using Fabric-provided segment identifiers. The current manager does not implement VM SecurityGroup enforcement or the required policy binding before VM creation. Tenants need VMs and physical hosts to share an isolated network with consistent address allocation, DNS and security policy. Administrators need the existing manager to follow the approved networking contract so it can interoperate with a conforming Fabric Manager. Until that implementation and its lab validation are complete, a successfully created network alone does not establish workload connectivity or isolation.
 
 ## In Scope
 
-- **K8s manager registration** for EVPN fabric bridging (IPv4 address family only) [Clarify: R2.Q4]
-- **Fabric-to-k8s manager data dependency** — subnet provisioning must ensure the fabric manager completes and provides network segment identifiers before the k8s manager begins, using a manager-agnostic interface [Clarify: R1.Q3, R2.Q5, D7] [User]
-- **Automatic overlay network provisioning** on hosting clusters that bridges VMs to the physical fabric when a VirtualNetwork/Subnet is created [Clarify: R2.Q1]
-- **VM-to-fabric connectivity** — VMs are discoverable and directly reachable from bare-metal servers on the physical fabric (both L2 same-subnet and L3 cross-subnet scenarios)
-- **Single-subnet-per-VirtualNetwork constraint for this k8s manager** — when a VirtualNetwork uses a NetworkClass with this k8s manager, the system rejects additional subnet creation with a clear error [Clarify: R1.Q4, D4]
-- **Non-conflicting IP address assignment** — VMs receive IP addresses that do not conflict with fabric DHCP allocations [Clarify: R1.Q5]
-- **Installation prerequisites documentation** — Cloud Infrastructure Admin must complete documented infrastructure prerequisites to enable physical fabric connectivity before creating the first VirtualNetwork [Clarify: R2.Q2, R2.Q3, D6] [User]
-- **Diagnostic tooling documentation** — documented tools for Cloud Infrastructure Admins to verify network segment state and troubleshoot connectivity issues [Clarify: R3.Q2]
-- **Gateway MAC coordination prerequisite** — Cloud Infrastructure Admin must ensure gateway MAC addresses match between overlay and fabric before enabling EVPN to prevent L3 traffic failures [Clarify: R1.Q5]
-- **Single hosting cluster** (no multi-cluster VM placement)
-- **Release 0.3**
+- VMaaS networking on the single provider-owned networking hub, in connected IPv4 deployments, through the release's supported EVPN path.
+- Fabric interoperability using the selected compatible Fabric Manager, with automatic segment coordination and disjoint VM, physical-host and guest-ingress address allocations. The host compatibility fix applies to this manager with every selected Fabric; administrators must verify matching route exchange for that pair. Real Netris interoperability is the initial required lab validation; other pairs need their own evidence.
+- One VM-capable Subnet per VirtualNetwork under the current manager limit. Other Subnets remain available for physical workloads; VM attachment on one of those Subnets reports the limitation explicitly. Adding a Subnet does not invalidate the existing owner's VM network.
+- Workload addresses, gateway and agreed DNS resolvers supplied through DHCP. A VM keeps its address across restart and live migration. The Fabric supplies routing to physical workloads and other Subnets in the same VirtualNetwork.
+- SecurityGroup enforcement before a VM first uses its tenant network, baseline protection for unbound workloads, consistent rule updates, deterministic retries and cleanup of owned resources.
+- SecurityGroups can be prepared before any Subnet exists and remain available while their VirtualNetwork exists, including after its VM-capable Subnet is removed. Removing one VM or Subnet preserves other live groups and workloads. [User]
+- Administrator installation and diagnostic guidance, actionable prerequisite and unsupported-path errors, and evidence that distinguishes implementation checks from real connectivity and policy validation.
 
 ## Out of Scope
 
-The following are explicitly deferred to Phase 2 (OSAC-3667, release 0.4):
-
-- **Multi-cluster hosting** — subnet provisioned on multiple clusters with VMs on different clusters sharing the same subnet via fabric
-- **Inter-subnet L3 routing between VMs** on the same cluster (requires OVN Connectors for inter-CUDN routing)
-- **Multi-NIC VMs with all NICs fabric-reachable** (future scope; current VMaaS accepts at most one tenant attachment; requires EVPN support for secondary UDN interface advertisement)
-- **DPU-based bridging** — hardware offload of OVN-to-fabric bridging via SmartNICs
-
-The following are out of scope for Phase 1:
-
-- **IPv6 and dual-stack support** — not supported by the shared Unified Networking contract. [Clarify: R2.Q4]
-- **Standardized route-target format** — deferred until fabric manager implements it [Clarify: R1.Q3, D3, D7] [User]
-- **MetalLB IPAddressPool creation** — handled separately in OSAC-1436 (CaaS Networking) [Clarify: R3.Q3, D9]
-- **Physical infrastructure automation** — manual prerequisites remain manual for Phase 1 [Clarify: R2.Q1, R2.Q3, D5, D6]
-- **Automatic gateway MAC coordination** — Cloud Infrastructure Admin must manually coordinate gateway MAC addresses (moved to prerequisites above) [Clarify: R1.Q5]
+- Additional networking hubs, cross-hub connectivity, secondary tenant attachments, IPv6, dual-stack and disconnected networking deployments.
+- VM attachment to multiple Subnets of one VirtualNetwork while the current one-network limit applies; an owner network is not handed to an existing sibling Subnet when its owner is deleted.
+- Automatic configuration of physical links, node tunnel endpoints or BGP peering by a tenant networking task.
+- New inter-VirtualNetwork peering, new network types, provider-written Kubernetes Managers, migration/adoption of existing provider state, and MetalLB address-pool provisioning by this manager.
 
 ## User Stories
 
 ### Cloud Infrastructure Admin
 
-- As a Cloud Infrastructure Admin, I want to register the EVPN k8s manager so that OSAC can provision fabric-bridged subnets for VMs. [Clarify: R1.Q1, R2.Q4, D1]
-
-- As a Cloud Infrastructure Admin, I want documented installation prerequisites so that I can prepare the infrastructure before enabling EVPN for the first time. [Clarify: R2.Q2, R2.Q3, D6] [User]
-
-- As a Cloud Infrastructure Admin, I want documented diagnostic tools so that I can verify network segment state and troubleshoot connectivity issues when VMs cannot reach the fabric. [Clarify: R3.Q2]
-
-- As a Cloud Infrastructure Admin, I want to identify which VirtualNetworks have reached the single-subnet limit (via monitoring or status queries) so that I can plan for Phase 2 deployment or guide tenants to create additional VirtualNetworks.
+- As a Cloud Infrastructure Admin, I want to select the supported EVPN Kubernetes Manager with a compatible Fabric Manager during installation so that VMs can use the provider's tenant networks.
+- As a Cloud Infrastructure Admin, I want explicit prerequisites for peering, address allocation and DNS so that a deployment can be prepared before tenant traffic starts.
+- As a Cloud Infrastructure Admin, I want diagnostics that distinguish a missing prerequisite, a manager limitation and a connectivity failure so that the correct configuration or provider component can be repaired.
 
 ### Tenant Admin / Tenant User
 
-- As a Tenant Admin or Tenant User, I want to create VirtualNetworks and Subnets using the existing OSAC API without needing to configure fabric bridging details, so that VMs I provision are automatically reachable from the physical fabric. [Clarify: R1.Q2, D2]
-
-- As a Tenant Admin or Tenant User, I want VMs I provision on fabric-bridged subnets to be reachable from bare-metal servers, so that my workloads can span VMs and physical hosts. [User]
-
-- As a Tenant Admin or Tenant User, I want the system to reject my second Subnet creation attempt under the same VirtualNetwork with a clear error message, so that I understand the constraint and can structure my networks accordingly. [Clarify: R1.Q4, D4]
+- As a Tenant Admin or Tenant User, I want a VM on a supported Subnet to communicate with permitted physical workloads using the normal OSAC networking resources so that applications can span virtual and physical infrastructure.
+- As a Tenant Admin or Tenant User, I want VM and physical addresses to be allocated without collisions so that both can share the Subnet reliably.
+- As a Tenant Admin or Tenant User, I want selected SecurityGroups to protect VM traffic from first boot so that unbound or incompletely prepared workloads do not exchange application traffic.
+- As a Tenant Admin or Tenant User, I want a VM's address to survive restart and live migration so that permitted Fabric traffic continues to reach it.
+- As a Tenant Admin or Tenant User, I want an unsupported VM attachment to explain the owner-Subnet limitation while preserving existing workloads so that the network can be structured within the supported boundary.
+- As a Tenant Admin or Tenant User, I want deleting my VM or network to remove its owned networking state while preserving other live resources so that retries and partial failures do not damage another workload.
 
 ## Assumptions
 
-- The Cloud Infrastructure Admin has completed the documented infrastructure prerequisites before creating the first VirtualNetwork. [Clarify: R2.Q3] [User]
-
-- The fabric manager provides network segment identifiers when OSAC creates a VPC/VNet, enabling automatic provisioning by the k8s manager without manual configuration. [Clarify: R1.Q3, R2.Q5, D7]
-
-- OCP workers have network connectivity to the fabric. [Clarify: R2.Q3]
-
-- A NetworkClass exists with both fabric and k8s managers configured, enabling dual-dispatch provisioning.
-
-- Fabric-level SecurityGroups (ACL rules) apply to fabric-bridged VM traffic.
-
-- Fabric-level NATGateways (SNAT via softgate) apply to fabric-bridged VM egress traffic.
-
-## Acceptance Criteria
-
-- [ ] A NetworkClass with `fabric_manager: "netris"` and `k8s_manager: "cudn_evpn"` can be created and transitions to READY state
-- [ ] Creating a VirtualNetwork + Subnet with this NetworkClass provisions both Netris VNet and overlay network on OCP
-- [ ] VMs deployed on the subnet receive IP addresses that do not conflict with Netris DHCP allocations
-- [ ] VMs are discoverable and directly reachable from bare-metal servers on the physical fabric (both L2 same-subnet and L3 different-subnet scenarios)
-- [ ] FRR diagnostic commands show correct VNI state on OCP workers
-- [ ] Creating a second Subnet under the same VirtualNetwork returns a validation error message referencing OVN Connectors limitation
-
-**Non-Functional:**
-- [ ] Automated integration test in CI verifies end-to-end flow: subnet creation → dual-dispatch provisioning → VM placement → fabric reachability
+- The approved EVPN gateway, route-advertisement and DHCP behavior can be realized by the selected hub and Fabric versions. A real Netris/Fabric-pair result is still required; document approval does not establish runtime support.
+- Supported hub APIs can provide the required DNS settings, address stability and policy behavior. The design records the unresolved mechanism choices and their implementation impact.
 
 ## Dependencies
 
-- **OSAC-1717 (K8s Manager — OVN-Kubernetes EVPN Spike):** Validates OVN EVPN technical approach. Status: Closed.
+- The selected shared namespace/policy direction requires review of the VN/Subnet lifecycle amendment, safe deletion, exact platform enforcement and concurrent policy updates before activation. [User]
 
-- **OSAC-1433 (Unified Networking Architecture):** Provides foundation for NetworkClass, dispatcher, k8s manager registration pattern. This design extends OSAC-1433 with the OVN EVPN k8s manager section. [Clarify: R3.Q4, D10]
-
-- **OSAC-1440 (Dispatcher Core):** Provides dispatcher infrastructure for routing networking operations to fabric and k8s managers based on NetworkClass configuration.
-
-- **Fabric Manager (Netris):** Must support VPC/VNet provisioning with network segment identifier allocation and API return. Physical infrastructure configuration is manual.
-
-- **OVN-Kubernetes:** Must support overlay network provisioning with fabric bridging. Constraint: does not currently route between separate overlay networks on the same cluster (Connectors feature pending). [Clarify: R1.Q4]
-
-- **FRR Operator (kubernetes-nmstate-operator):** Required for BGP EVPN route advertisement from OCP workers. Must be installed before EVPN configuration.
-
-- **NMState Operator (openshift-nmstate):** Required for network interface configuration on OCP workers. Must be installed before EVPN configuration.
-
-- **OSAC-3667 (Phase 2):** Blocked by this feature. Adds multi-cluster hosting, inter-subnet routing, and future multi-NIC support.
-
-- **OSAC-1435 (VMaaS Networking API Integration):** Blocked by this feature. Requires k8s manager (CUDN LocalNet or OVN EVPN) to be available before end-to-end VM networking works.
-
-## Known Limitations
-
-- **Silent connectivity failure on network segment mismatch** — If network segment identifiers are misconfigured between the fabric and overlay, VMs may boot successfully and receive IP addresses but cannot reach the fabric. The system does not surface warnings when segment state is inconsistent. Cloud Infrastructure Admins must use documented diagnostic tools to verify segment state. [Clarify: R3.Q2]
+- Shared-contract and Fabric-owner review must reconcile PR #1971's compatibility behavior with PR #357. Later integration with controller-provided route-target values needs an agreed API/handoff before it can replace the compatibility behavior; it is not claimed available by this revision.
+- [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) supplies shared manager resolution, stored address layouts, ordered tasks, typed handoffs and workload integration; [OSAC-6768](https://redhat.atlassian.net/browse/OSAC-6768) tracks the source API work.
+- [OSAC-6769](https://redhat.atlassian.net/browse/OSAC-6769) tracks installation settings and admission deployment. The Enclave plugin and Wizard must consume and validate those settings through their separately scoped work.
+- [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) implements the manager-specific changes after this documentation and its implementation delta are reviewed.
+- [Agentless alignment](https://redhat.atlassian.net/browse/OSAC-6755) and [Netris alignment](https://redhat.atlassian.net/browse/OSAC-6756) own Fabric realization. A Fabric/Kubernetes pair is supported only with recorded applicable validation.
+- OVN-Kubernetes, KubeVirt, FRR-K8s and the installed underlay must satisfy the prerequisites and lifecycle checks in the design. BMaaS/CaaS use Fabric attachments and retain their own workload orchestration.
 
 ---
 
 ## Provenance
 
-Authored: commit @ prd 0.8.0 - 837cf0d, workspace prd/OSAC-4291 @ e18362f (20 behind origin/main)
-Final: revise @ prd 0.8.0 - 837cf0d, workspace prd/OSAC-4291 @ e69542d (20 behind origin/main)
+Authored: revise @ prd 0.11.5 - 1c6e8de, workspace codex/cudn-evpn-route-targets @ 38d18d944 (7 behind origin/main)
+Final: revise @ prd 0.11.5 - 1c6e8de, workspace codex/osac-6761-cudn-evpn-contract @ a6aa33f0b
 
-> Context changed between commit and revise.
+> Context changed between revise and revise.
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.8.0","ai_workflows":"837cf0d","source_repo":"e69542d","source_repo_branch":"prd/OSAC-4291","commits_behind_main":20,"commits_ahead_main":3,"main_ref":"main","phases":["commit","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"1c6e8de","source_repo":"a6aa33f0b","source_repo_branch":"codex/osac-6761-cudn-evpn-contract","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->

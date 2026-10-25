@@ -1,366 +1,98 @@
-# Clarification Log — OSAC-4291
-
-## Status
-
-- Rounds completed: 3
-- Open gaps: None
-- Exit criteria met: Yes
-
-## Round 1 — User Personas and Visibility
-
-### R1.Q1: Personas — Who configures EVPN?
-
-The feature describes k8s manager registration, CUDN creation, and BGP peering setup. Which OSAC persona(s) are responsible for enabling EVPN for a deployment/region? Is this:
-- Cloud Infrastructure Admin work during initial OSAC installation?
-- Cloud Provider Admin work when onboarding a new region?
-- Automatically enabled based on infrastructure detection?
-
-#### Answer
-
-Cloud Infrastructure Admin work during initial OSAC installation.
-
-#### Impact
-
-PRD user stories will target Cloud Infrastructure Admin for EVPN setup/configuration workflows. Tenant-facing sections describe VirtualNetwork/Subnet provisioning with no EVPN visibility.
-
-#### Decision (D1)
-
-EVPN configuration is Cloud Infrastructure Admin responsibility during installation - not tenant-facing, not automatic, not per-region onboarding.
-
----
-
-### R1.Q2: Tenant visibility — Is EVPN transparent to tenants?
-
-When a Tenant User or Tenant Admin provisions a VM, do they:
-- Choose EVPN vs. other networking methods explicitly (e.g., via a dropdown or flag)?
-- See EVPN mentioned anywhere in the UI/CLI (e.g., "Network type: EVPN")?
-- Experience EVPN as completely infrastructure-transparent (no visibility)?
-
-#### Answer
-
-Tenants use VirtualNetwork / Subnet. They do not choose EVPN, set VNIs or route-targets, or peer BGP. The provider picks how the hosting cluster joins the fabric.
-
-#### Impact
-
-PRD will not include tenant-facing EVPN configuration options. Tenant user stories focus on VirtualNetwork/Subnet provisioning. All EVPN implementation details (VNI, route targets, BGP peering) are infrastructure-side only.
-
-#### Decision (D2)
-
-EVPN is completely transparent to tenants. No UI/CLI exposure of EVPN-specific concepts (VNI, route targets, BGP) in tenant workflows.
-
----
-
-### R1.Q3: Scope — VNI Management
-
-The demo shows **Netris manages VPC/VNet allocations (sets VNI IDs)** and **OSAC allocates VPC/Subnet → Netris provisions VNIs → CUDN consumes them**.
-
-For Phase 1:
-- Does the PRD include **automatic VNI extraction from Netris** and propagation to CUDN?
-- Or is manual VNI coordination (like the demo's Phase 4/5) acceptable for 0.3?
-- Should Phase 1 include the **`0:VNI_ID` route-target standardization** the demo mentions Netris will fix?
-
-#### Answer
-
-Phase 1 will not include `0:VNI_ID` route-target standardization. VNI propagation from fabric manager to k8s manager is automatic - no manual extraction or coordination steps required (unlike the demo's Phase 4/5 manual workflow).
-
-#### Impact
-
-PRD scope includes automatic VNI propagation (no manual steps). Out of scope: `0:VNI_ID` route-target format (deferred until Netris implements it). The fabric manager must provide VNI when provisioning VPC/VNet, and the k8s manager must receive it to configure the overlay network. The mechanism for passing VNI from fabric manager output to k8s manager input is a design decision.
-
-#### Decision (D3)
-
-Automatic VNI propagation from fabric manager to k8s manager is in scope for Phase 1. The `0:VNI_ID` route-target standardization is out of scope.
-
----
-
-### R1.Q4: Edge case — CUDN Single-Subnet Limitation
-
-The demo states **"CUDN is limited to a single subnet per VPC ipVRF — cannot reuse a VPC and add more subnets."**
-
-This is stricter than the Jira description's "one VM-subnet per VirtualNetwork" constraint:
-- Is the constraint **one CUDN per VPC ipVRF** (demo limitation)?
-- Or **one VM-hosting subnet per VirtualNetwork** (Jira wording)?
-- Where is this validated? (When creating the Subnet? When creating the CUDN? When provisioning the VM?)
-
-#### Answer
-
-The limit is one subnet per VirtualNetwork. The validation happens when creating the subnet - a second subnet under the same VirtualNetwork won't be allowed.
-
-#### Impact
-
-PRD validation requirements: fulfillment-service Subnet creation API must reject a second subnet when the parent VirtualNetwork uses a NetworkClass whose k8s manager has this limitation. Error message should reference OVN Connectors limitation. No operator-side validation needed (API rejection prevents the CR from ever being created).
-
-#### Decision (D4)
-
-Validation enforced at Subnet API creation time in fulfillment-service, conditional on the NetworkClass's k8s manager. Constraint is one subnet per VirtualNetwork when the k8s manager is `cudn_evpn` (not a universal constraint; other NetworkClasses support multiple subnets). Second subnet creation attempt returns validation error.
-
----
-
-### R1.Q5: Scope — IPAM and Gateway Management
-
-The demo shows **OCP CUDN runs IPAM** (not Netris DHCP) and **gateway IP collision requires same MAC address on both sides**.
-
-For Phase 1:
-- Is **dual gateway MAC coordination** in scope (OCP CUDN gateway + Netris VNet gateway must match)?
-- Or is this a **known limitation** to document (out of scope for automatic handling)?
-- Does Phase 1 handle **DHCP range coordination** to avoid IP collisions?
-
-#### Answer
-
-Dual gateway MAC coordination is a known limitation (out of scope for automatic handling). Phase 1 handles DHCP range coordination to avoid IP collisions.
-
-#### Impact
-
-PRD Known Limitations section documents dual gateway MAC requirement (manual coordination needed). PRD scope includes DHCP range coordination mechanism - k8s manager must configure OCP CUDN IPAM to avoid overlap with Netris DHCP ranges.
-
----
-
-## Round 2 — BGP Configuration and Automation
-
-### R2.Q1: BGP Configuration Automation
-
-The demo shows **manual FRRConfiguration CRD creation** (40+ lines of YAML with ASN, router ID, neighbor config, route targets).
-
-For Phase 1:
-- Does the k8s manager **automatically create** the FRRConfiguration CRD when a subnet is created?
-- Or does the Cloud Infrastructure Admin **manually create** it during installation (one-time setup)?
-- If automatic: what parameters come from Netris vs. NetworkClass configuration?
-
-#### Answer
-
-When CUDN is created, FRRConfiguration is created for the VirtualNetwork and Subnet. But the Cloud Infrastructure Admin should create the BGP session with Netris (underlay peering is manual prerequisite).
-
-The required BGP configuration fields are:
-- BGP local AS
-- BGP remote AS (from Netris)
-- BGP peer address (from same subnet as physical interface IP)
-- BGP peer local interface address (peering with Netris IP)
-
-#### Impact
-
-PRD scope: k8s manager automatically creates FRRConfiguration for EVPN overlay when CUDN is created (VNI-specific route targets, L2VPN EVPN config). Out of scope: BGP underlay session setup (manual prerequisite). Prerequisites section documents what Cloud Infrastructure Admin must configure before creating first VirtualNetwork.
-
-#### Decision (D5)
-
-FRRConfiguration for EVPN overlay (VNI, route targets) is automatic. BGP underlay peering (physical link, neighbor session) is a manual prerequisite configured by Cloud Infrastructure Admin.
-
----
-
-### R2.Q2: VTEP Configuration Automation
-
-The demo shows **manual VTEP setup** (VTEP CRD + NMState dummy interface with `10.200.255.1/32`).
-
-For Phase 1:
-- Does the k8s manager **automatically provision** the VTEP interface on each hosting cluster node?
-- Or is VTEP setup a **prerequisite** (Cloud Infrastructure Admin does it once before enabling EVPN)?
-- If automatic: where does the VTEP IP range come from?
-
-#### Answer
-
-VTEP address should be predefined once per node by infrastructure (same as BGP configuration with Netris as underlay). This is a prerequisite setup, not automatic provisioning.
-
-#### Impact
-
-PRD Prerequisites section documents VTEP setup (VTEP CRD + NMState NNCP per node with dummy interface and /32 IP). VTEP configuration is one-time infrastructure setup, not per-VirtualNetwork automation.
-
----
-
-### R2.Q3: NMState Underlay Configuration
-
-The demo shows **manual underlay link setup** (Netris API + NMState NNCP for physical interface IP).
-
-For Phase 1:
-- Is underlay link configuration a **prerequisite** documented in installation docs?
-- Or does Phase 1 include **automation** for underlay provisioning?
-
-#### Answer
-
-Installation prerequisites must be documented in the PRD. Before creating CUDN, the worker must join the fabric and establish BGP. This means: the port connected to the worker is set in Netris as underlay, which configures BGP on the Netris side.
-
-#### Impact
-
-PRD includes "Installation Prerequisites" section documenting the infrastructure setup workflow:
-1. Configure underlay link in Netris (port → underlay mode)
-2. Configure physical interface IP via NMState
-3. Set up VTEP interface per node
-4. Verify BGP session established
-
-All steps are manual Cloud Infrastructure Admin work, prerequisite to creating first VirtualNetwork.
-
-#### Decision (D6)
-
-Underlay configuration (physical link, Netris port setup, BGP session) is a documented prerequisite, not automated by Phase 1. PRD includes detailed Prerequisites section.
-
----
-
-### R2.Q4: NetworkClass ConfigMap Schema
-
-The Jira mentions "k8s manager registration via ConfigMap with declared capabilities."
-
-What exact fields are in the ConfigMap?
-
-#### Answer
-
-NetworkClass ConfigMap should contain: `name: cudn_evpn` with the IPv4-only
-capability (same structure as other k8s managers, no additional EVPN-specific
-fields). IPv6 and dual-stack networking are not supported.
-
-#### Impact
-
-PRD documents NetworkClass ConfigMap schema matching existing pattern from OSAC-1433 unified networking. No EVPN-specific ConfigMap fields beyond standard name and capabilities.
-
----
-
-### R2.Q5: Route Target Calculation
-
-The demo uses formula `(leaf ASN % 65536):VNI` to calculate route targets.
-
-For Phase 1:
-- Does the k8s manager **calculate** route targets using this formula?
-- Or does Netris **return** the route target when creating VPC/VNet?
-
-#### Answer
-
-Route target is automatically set during CUDN creation. The route target is not known until Netris creates the VPC and subnet. The k8s manager then uses that route target when creating the CUDN. No manual configuration by users.
-
-#### Impact
-
-PRD workflow: Netris VPC/VNet creation returns route target values → k8s manager uses those values in FRRConfiguration when creating CUDN. No route-target calculation logic in k8s manager. Netris is source of truth for route targets.
-
-#### Decision (D7)
-
-Route targets come from Netris (returned during VPC/VNet creation). K8s manager uses Netris-provided route target values when creating CUDN - no client-side calculation.
-
----
-
-## Round 3 — Testing, Observability, and Design Context
-
-### R3.Q1: Integration Test Scope
-
-The Jira Definition of Done mentions "Integration test covering subnet creation → CUDN + EVPN → VM placement → fabric reachability."
-
-For Phase 1:
-- What test infrastructure is required? (Real Netris fabric? Simulated? Kind cluster?)
-- What does "fabric reachability" verification mean specifically?
-- Does the test run in CI, or is it a manual verification step?
-
-#### Answer
-
-Phase 1 requires a real Netris fabric (not simulated). Fabric reachability means ping from worker's IP (BGP source) to Netris switch port, and verify BGP session is up.
-
-Integration test runs automatically in CI. Setup requires creating BGP configuration and configuring the worker OCP as underlay peer to Netris. VM-to-bare-metal connectivity is checked only after CUDN is created, VM booted up, and bare-metal configured on Netris with same VPC subnet.
-
-#### Impact
-
-PRD Test Plan section documents CI integration test requirements:
-- Real Netris fabric infrastructure (not mocked)
-- Automated setup: BGP underlay peering between OCP worker and Netris ns-leaf
-- Test phases: 1) Verify BGP session up (ping worker to switch), 2) Create VirtualNetwork/Subnet via OSAC API, 3) Verify CUDN creation with correct VNI/route-targets, 4) Deploy VM, 5) Provision bare-metal node on Netris in same VPC subnet, 6) Verify VM-to-bare-metal connectivity
-
-#### Decision (D8)
-
-Integration test is automated in CI, requires real Netris fabric, and validates full path from subnet creation through VM-to-bare-metal connectivity.
-
----
-
-### R3.Q2: EVPN Failure Modes and Observability
-
-If BGP peering fails or EVPN routes aren't advertised properly:
-- What does the user observe?
-- What diagnostic tools does the Cloud Infrastructure Admin have?
-- Are there automated health checks before marking Subnet as "Ready"?
-
-#### Answer
-
-In case BGP peering is up but there is a mismatch in VNI or route-target between VMs and Netris bare-metal, the user won't have traffic/ping to remote nodes in the same VPC. VM provisions successfully but connectivity fails (silent failure).
-
-Cloud Infrastructure Admin can verify VNI created properly by running FRR commands:
-- `show evpn vni`
-- `show bgp l2vpn evpn`
-- `show bgp vni <VNI ID>`
-- `show bgp l2vpn evpn summary`
-
-#### Impact
-
-PRD Known Limitations section documents failure mode: VNI/route-target mismatch results in silent connectivity failure (VM provisions but can't reach fabric). No automated health checks in Phase 1 - verification is manual via FRR commands. PRD Troubleshooting section documents diagnostic commands for Cloud Infrastructure Admin.
-
----
-
-### R3.Q3: MetalLB IPAddressPool Creation
-
-The Jira Definition of Done mentions "MetalLB IPAddressPool created at subnet creation (for CaaS VIP allocation)."
-
-Is this in scope for Phase 1?
-
-#### Answer
-
-MetalLB IPAddressPool is out of scope for Phase 1.
-
-#### Impact
-
-PRD Out of Scope section explicitly lists MetalLB IPAddressPool creation. This is handled separately in OSAC-1436 (CaaS Networking).
-
-#### Decision (D9)
-
-MetalLB IPAddressPool creation is out of scope for Phase 1 (deferred to OSAC-1436 CaaS Networking).
-
----
-
-### R3.Q4: Relationship to OSAC-1433 Design
-
-Does this feature extend the existing OSAC-1433 design document, or create a new design document?
-
-#### Answer
-
-This extends the existing OSAC-1433 design document.
-
-#### Impact
-
-Design phase will add an "OVN EVPN k8s Manager" section to the existing OSAC-1433 unified networking design document, not create a standalone design.
-
-#### Decision (D10)
-
-Design extends OSAC-1433 (unified networking architecture) - not a new standalone document.
-
----
-
-## Additional Context Captured
-
-### Installation Prerequisites (from R2.Q3 and Round 3 discussion)
-
-Cloud Infrastructure Admin must complete these steps before creating the first VirtualNetwork:
-
-1. **Configure VTEP on all OCP nodes** (VTEP CRD + NMState NNCP per node with dummy interface and /32 IP)
-2. **Configure address on physical interface on worker** (will be BGP peer)
-3. **Ensure worker interface has connectivity to fabric switch**
-4. **Configure underlay link in Netris** (set port to underlay mode)
-5. **Create BGP peer between worker and ns-leaf** (FRRConfiguration with local AS, remote AS from Netris, peer addresses)
-6. **Verify BGP session established** (Netris adds OCP worker as underlay, worker configures BGP and enables EVPN)
-
-### CUDN Creation Workflow (from Round 3 discussion)
-
-When tenant creates VirtualNetwork/Subnet:
-1. **Netris creates VPC and subnet first** (allocates VNIs and route targets)
-2. **Only after that, CUDN is created** (reuses Netris VNIs and route-targets)
-3. **When CUDN is set up, EVPN routes are updated**
-
-### Subnet Flexibility (from Round 3 discussion)
-
-- CUDN can reuse existing VPC and VNet from Netris if we get the VNI for Layer 2, Layer 3, and route-targets
-- The subnet can be the same as Netris or different
-- In case of different subnets (OCP CUDN subnet vs. Netris VNet subnet), Layer 3 VNI (ipVRF) is used for routing between them
-
----
-
-## Locked Decisions Summary
-
-- **D1:** EVPN configuration is Cloud Infrastructure Admin responsibility during installation
-- **D2:** EVPN is completely transparent to tenants
-- **D3:** Automatic VNI propagation from fabric manager to k8s manager is in scope; `0:VNI_ID` route-target format is out of scope
-- **D4:** One-subnet-per-VirtualNetwork validation enforced at Subnet API creation time, conditional on NetworkClass's k8s manager (applies to `cudn_evpn`, not universal)
-- **D5:** FRRConfiguration for EVPN overlay is automatic; BGP underlay peering is manual prerequisite
-- **D6:** Underlay configuration is documented prerequisite, not automated
-- **D7:** Route targets come from Netris (no client-side calculation)
-- **D8:** Integration test is automated in CI with real Netris fabric
-- **D9:** MetalLB IPAddressPool creation is out of scope
-- **D10:** Design extends OSAC-1433, not a new document
+# Clarification Log — CUDN EVPN Manager
+
+## Status and Authority
+
+This is the OSAC-6758 alignment revision for the existing OSAC-4291 documents. The user selected alignment with approved networking PR #357 on 2026-10-25, then directed continuation of the route-target fix discussion for osac PR #1971. The merged [manager contract](https://github.com/osac-project/enhancement-proposals/blob/a430f35da98461b5331f690332b1eebd3a3012b5/enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md) and associated Unified/VMaaS designs remain the approved baseline. D23 records the proposed explicit-RT amendment and D24 the intended later API integration; neither is claimed approved in the shared contract.
+
+The target requirements, proposed RT exception and user-selected shared namespace direction (D26) are recorded; review questions Q1–Q5 remain open. This revision is a review draft, not a claim that those questions, implementation or real-pair validation are complete. [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) remains separate from this documentation work.
+
+## Current Decisions
+
+| ID | Decision | Source |
+|---|---|---|
+| D11 | OSAC owns cudn_evpn; this release uses network type evpn on one provider-owned hub in a connected IPv4 deployment. Fabric Managers conform to the same typed interface. | Contract §§4.1–4.3, 4.9; Unified support boundary |
+| D12 | All eight internal entry points consume the prescribed snapshots/API IDs in osac_job_vars. Successful no-output tasks publish nothing; overlay apply returns only vm_attachment.namespace. | Contract §§4.5–4.6, 4.10 |
+| D13 | Core records gateway/overlay/physical/lbVip allocation once. The manager consumes that plan and reserves all CIDRs outside overlay; it does not derive a competing plan from fabric_reserved_range. | Contract §4.8 |
+| D14 | The approved baseline uses a primary Layer2 EVPN CUDN, installed VTEP, supplied different integer L2/L3 VNIs and MTU 1500. Its omitted-RT/<hub-AS>:<VNI> clause is replaced in this proposal by D23. The existing shared AS/VNI admission rule is retained pending Q5 review; no additional VNI range is claimed by this exception. | Contract §§4.9–4.10; proposed D23 |
+| D15 | Fabric owns the anycast gateway and routing. CUDN has no OVN router port; DHCP supplies the recorded gateway and CUDN_EVPN_DNS_RESOLVERS. Dual overlay/Fabric gateway MAC matching is not an installation task. | Contract §§4.8–4.10 |
+| D16 | First create_subnet to claim an unowned VN network records the owner Subnet's API ID. Other Subnets' network tasks succeed without realization, and their overlay applies fail permanently. Owner delete removes the network and releases the claim, with no handover. | Contract §§4.7, 4.10 |
+| D17 | Core serializes Subnet tasks per VN. Managers use atomic backend operations or retryable conflict detection, take no manager locks, and ensure deletion wins over cancelled late writes. | Contract §4.7 and hub-network edge cases |
+| D18 | Baseline deny covers unbound pods both ways, preserving DHCP/ARP. Group policy exists without a Subnet, binds by ComputeInstance API-ID label, keeps all bound interfaces on current rules and sets both policy directions; D26 selects one shared policy object per group. Unsupported ICMP must fail permanently if not enforceable. | Contract §4.10 |
+| D19 | Apply prepares a deterministic tenant-labelled primary-network namespace before VM creation and never reads or modifies the VM. VMaaS owns the VM, pod labels and l2bridge attachment. Address stability across restart/live migration is required. | Contract §4.10; VMaaS VM construction |
+| D20 | Networking settings and credentials enter through the networking instance-group environment; tasks use the hub service account. Missing/malformed settings and prerequisites are retryable; unsupported paths/policy are final. Errors are sanitized and failed tasks fail the play. | Contract §§4.3, 4.6 |
+| D21 | Cleanup finds state by stable API ID and preserves foreign/live resources. Manager tasks own their backend objects; VMaaS owns VM teardown, and core owns dependent-operation ordering and finalizers. | Contract §§4.3, 4.7, 4.10; VMaaS deletion |
+| D22 | Netris lab evidence is required for the provisional EVPN segment/gateway duties. Exact Fabric route-type behavior remains open until that test; no fixed type-5 assertion or performance threshold is inferred. | Contract §§4.9, 4.11, 4.13 |
+| D23 | Proposed compatibility amendment: every cudn_evpn network emits macVRF.routeTarget = "0:<l2_vni>" and ipVRF.routeTarget = "0:<l3_vni>", matching PR #1971, without a Netris/vendor condition. The selected Fabric must import/export the matching RTs. Shared-contract/Fabric-owner approval and real-pair evidence are required before claiming aligned support. | User direction; osac PR #1971 |
+| D24 | Intended later integration consumes the actual RT values exposed by the Fabric/controller API once its supported API and OSAC handoff are agreed. It must use those values rather than keep deriving RTs from VNIs. No new API field name, import/export schema or current availability is invented here. | Earlier user-provided controller integration guidance; Q5 |
+| D25 | SecurityGroup enforcement is missing from the current cudn_evpn role and remains mandatory OSAC-6761 implementation: group create/delete, baseline deny, exact ingress/egress rules, VM-ID binding before boot, updates for every bound target and owned cleanup. Q2 resolves the mechanism; this work is not deferred or satisfied by the RT fix or a documented no-op. | User reminder; current role task inventory; Contract §4.10 |
+| D26 | User-selected proposal: create one VN-owned namespace in create_virtual_network, keep it through attachment/owner-Subnet deletion, and remove it only in safe VN teardown. One NetworkPolicy per group stores rules and VM-ID membership, with conditional updates preserving the other fields; unbound policy matches no pod. This extends PR #357's manager-specific VN no-op clause. Shared review and Q2/Q3 engineering closure remain required. | User approval of policy-namespace-proposal; 2026-10-25 |
+
+## Earlier Decisions and Their Disposition
+
+The earlier log's identifiers remain traceable here. The baseline copies are retained in the workflow's local revision artifacts; superseded answers are not current installation instructions.
+
+| Earlier ID/reference | Earlier subject | Current disposition |
+|---|---|---|
+| D1 / R1.Q1 | Administrator performs installation configuration | Retained; D11/D20 define ownership and settings. |
+| D2 / R1.Q2 | EVPN details transparent to tenants | Retained; no tenant VNI/RT/BGP configuration. |
+| D3 / R1.Q3 | Automatic VNI propagation; no 0:VNI standardization | D12 retains typed VNI propagation; D23 proposes the requested 0:VNI compatibility exception to the D14 baseline. |
+| D4 / R1.Q4 | Reject a second Subnet at the API | Superseded by D16: owner-Subnet limit is enforced at overlay attachment, without rejecting sibling Subnets. |
+| R1.Q5 | Coordinate two gateway MACs and Fabric-derived DHCP exclusions | Superseded by D13/D15: recorded allocation plan and one Fabric gateway. |
+| D5 / R2.Q1 | Manager automatically creates overlay FRRConfiguration | Superseded by D14/D20: installed FRR/VTEP prerequisites and CUDN integration; no per-Subnet peering task. |
+| R2.Q2 / D6 / R2.Q3 | VTEP and underlay are prerequisites | Retained and made explicit in the installation assessment. |
+| R2.Q4 | Older name/capabilities registration schema | Superseded by D11 and contract §4.2's immutable ansible_role/network_type registration. |
+| D7 / R2.Q5 | Obtain route targets from Netris | D23 currently derives explicit compatibility RTs from supplied VNIs. D24 records later authoritative API consumption once the interface is agreed; no such RT field exists in the current typed handoff. |
+| D8 / R3.Q1 | Automated real Netris end-to-end validation | Required validation remains; no completed run is asserted. Kind/mocked results are distinct. |
+| R3.Q2 | Diagnostics for silent traffic failure | Retained with typed prerequisite/error gates; task success still does not prove packet forwarding. |
+| D9 / R3.Q3 | No manager-created MetalLB IPAddressPool | Retained; Fabric/core own the guest-ingress allocation duties. |
+| D10 / R3.Q4 | Extend the shared Unified design | Shared requirements remain authoritative; these existing manager documents now specify the manager boundary and delta. |
+| Additional subnet-flexibility context | Reuse existing VPC/VNet, different overlay/Fabric subnets | Current target uses one Subnet L2 segment and the recorded allocation pools; no migration/adoption workflow or alternate topology is selected. |
+
+The open [osac PR #1971](https://github.com/osac-project/osac/pull/1971) is included in this proposal through D23. Its code sets both explicit RT fields and adds a render assertion; it does not configure Fabric import/export or implement controller-API RT retrieval. Its conflict with the approved shared contract is resolved only after the matching contract amendment is reviewed, not by describing it as already approved.
+
+## Open Manager Realization Questions
+
+### Q1: Supported DNS and Address-Persistence APIs
+
+- **Owner:** Connectivity & Fabric maintainers, with OVN/KubeVirt integration maintainers.
+- **Question:** Which supported hub versions and APIs implement the configured DHCP resolver list and guest address stability through restart/live migration on the primary EVPN network?
+- **Impact:** CUDN/attachment implementation and TC-R6-01/TC-ATTACH-02 cannot be finalized from an invented field or assumed platform behavior. These remain required outcomes, not deferred scope.
+- **Closure evidence:** Reviewed object/setting examples and a real-hub DHCP/restart/migration result with versions.
+
+### Q2: Policy Objects, Updates and Binding
+
+- **Current status:** The role has no group create/delete or overlay attachment task pair and no policy/binding implementation in its existing Subnet tasks. All D25 outcomes must be implemented and validated under OSAC-6761.
+- **Owner:** Connectivity & Fabric maintainers, with OVN policy maintainers.
+- **Selected direction:** D26 uses one VN-owned namespace and one NetworkPolicy per group; the user approved proceeding with this proposal. There are no per-attachment copies. The compiler rejects ICMP permanently.
+- **Remaining review:** Amend the shared VN/Subnet namespace lifecycle; review the [concrete selector/conditional-update proposal](write-protection-review.md#q2-one-object-policy-updates), capacity and ambiguous-write handling that preserve the required rule/binding guarantees. Q3 must separately establish deletion fencing.
+- **Impact:** VN tasks gain namespace side effects; owner Subnet and attachment deletion preserve that namespace and other groups. Single-object updates avoid a copy transaction but do not prove failed-write preservation, delete-wins or DHCP/ARP enforcement.
+- **Closure evidence:** Reviewed shared-contract/object/lifecycle examples and API-race/failure tests, followed by deployed enforcement evidence. User selection is not a claim of maintainer approval or implemented lifecycle code.
+
+### Q3: Durable Ownership and Deletion
+
+- **Owner:** Connectivity & Fabric maintainers, coordinated with OSAC-6766 lifecycle owners.
+- **Question:** Which durable backend primitive records owner Subnet API ID and detects conflicts without manager Leases, prevents a late create after successful delete, and safely handles a claim while the owner CR is terminating?
+- **Investigation result:** The [write-protection assessment](write-protection-review.md#q3-already-issued-creates) finds that a separate durable journal and exclusive worker do not fence an already-issued POST on their own. That candidate remains on hold; unknown creates must keep cleanup pending until a supported mechanism establishes completion. No new private API/worker is selected and no eventual-cleanup exception is adopted.
+- **Impact:** Replacing existing Lease/handover logic before establishing these guarantees would weaken cleanup safety.
+- **Closure evidence:** Reviewed state transitions, identity predicates and cancelled-create/delete interleavings; no mutable OSAC CR written by the manager.
+
+### Q4: Installation Discovery and Fabric Pair
+
+- **Owner:** Connectivity & Fabric and Enclave installation maintainers, with Netris integration owners.
+- **Question:** How does the manager identify the installed VTEP and authoritative hub AS, validate the single-AS prerequisite, and verify the real Fabric's gateway and RT/route behavior?
+- **Impact:** Prerequisite checks, AS/VNI rejection, installation examples and supported-pair claims depend on this evidence. No new per-manager tenant API setting is implied.
+- **Closure evidence:** Versioned prerequisite inventory and actual lab report. Netris is the initial required real pair; Agentless/Cumulus support requires its own qualifying evidence.
+
+### Q5: Shared Route-Target Amendment and Later API Handoff
+
+- **Owner:** Connectivity & Fabric contract maintainers, with the selected Fabric/controller integration owners.
+- **Question:** Approve the all-cudn_evpn explicit 0:VNI exception and matching Fabric import/export duties in contract §§4.9–4.10; determine whether the baseline hub-AS/VNI admission guard changes. When authoritative RTs become available from the controller, agree their API semantics and typed handoff before replacing the compatibility formula.
+- **Impact:** A host-only RT change is not universal interoperability: a mismatched Fabric import/export policy can leave BGP up while selected tenant routes are not imported. Current fixtures retain the existing shared VNI guard; the exception alone does not claim a guard change or a ready API.
+- **Closure evidence:** Reviewed [shared-contract amendment](route-target-amendment.md) and matching Fabric configuration, exact emitted CUDN values, and real-pair route/traffic evidence. The later API path needs a separately reviewed schema/handoff and tests using API-returned RTs that differ from the VNI-derived formula.
+
+## Tracking and Review
+
+- Documentation: OSAC-6758; manager implementation: OSAC-6761.
+- Active shared-core epic: OSAC-6766. Source APIs: OSAC-6768; installation: OSAC-6769.
+- OSAC-5974/5976 and OSAC-6753 are superseded tracking, not current implementation dependencies.
+- Enclave/plugin/Wizard and console/UX impacts are assessed in the design; conditional drafts are not claimed as created or assigned tasks.

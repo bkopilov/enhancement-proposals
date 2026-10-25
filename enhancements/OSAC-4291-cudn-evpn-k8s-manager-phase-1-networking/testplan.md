@@ -1,457 +1,304 @@
-# Testplan — OSAC-4291
+# Test Plan — CUDN EVPN Manager Contract Alignment
 
 ## Overview
 
-- **Feature:** OSAC-4291 — CUDN EVPN K8s Manager Phase 1 Networking: Single-Cluster VM-to-Fabric Bridging
-- **Total test cases:** 17
-- **Requirements covered:** 9 of 9 (R1-R9)
-- **Interface changes covered:** 6 of 6 (IC-1 through IC-6)
-- **Additional operational tests:** 2 deletion lifecycle tests + 1 skip-k8s-manager annotation test
+- **Documentation:** OSAC-6758; **manager implementation:** OSAC-6761; **parent:** OSAC-6757 under OSAC-5928.
+- **Source:** PR #357 manager contract §§4.3–4.10, Unified/VMaaS designs, this directory's revised PRD/design, and the user-requested PR #1971 RT amendment proposed for shared review.
+- **Active cases:** 32. **Retired historical IDs:** 4. Active IC coverage: IC-1 through IC-6.
+- **Execution status:** Planned; this document records no executed checks, CI success, packet capture or real-Fabric result.
+- **Ownership:** DEV owns Unit, Contract and component integration; QE owns deployed cross-component journeys. Shared-core and installer cases stay in their owning work under OSAC-6766/6769.
+
+The former manager plan's case IDs are preserved where their behavioral subject remains valid. Changed mappings and retired IDs are recorded below. No local decomposition/sync manifest exists for this revision; downstream Jira test references need review when the implementation task is refined.
+
+## Test Boundaries and Planned Invocation
+
+| Tier/owner | Invocation or required runner | Real boundary | Omitted or faked boundary |
+|---|---|---|---|
+| Unit / DEV | From osac-aap: `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`, extended during implementation | Input/rule/IPAM transformations, rendering and isolated behavior | Kubernetes, OVN, FRR, KubeVirt and Fabric |
+| Contract / DEV | Exact-input/result role fixtures in the component suite; from osac-aap: `uv run pytest tests/unit` after fixtures exist | Real role entry-point invocation where declared; artifact/error serialization | External endpoints are explicit fixtures; no deployed core/AAP or packet enforcement |
+| Component integration / DEV | New focused manager target in the existing `tests/integration/targets/` harness, registered in `make test` during OSAC-6761 | Real Ansible processes and Kind APIs; namespace/policy/state writes and conflicts | OVN, FRR, KubeVirt/Fabric packet path and deployed AAP. Installed CRD/prerequisite fixtures are identified as fakes |
+| Core/installer integration / owning DEV | Owning existing suites extended under OSAC-6766/6769; applicable AAP `make test` and installer native validation | Declared dispatch/status/installation API boundary | A mocked job cannot prove deployed task ordering or connectivity |
+| E2E / QE | Implemented `tests/e2e/` journeys against the deployed hub and real Fabric; actual entrypoint recorded with evidence | Fulfillment/operator/AAP, OVN/FRR/KubeVirt, DHCP/DNS and real Fabric | Nothing replaced silently; enumerate any omitted component per run |
+| Documentation review / documentation DEV | Review this four-document set against PR #357 and the implemented examples | Contract/example consistency | No runtime execution |
+
+No dedicated CUDN component target or generic conformance command is claimed to exist yet. OSAC-6766's conformance work must confirm its actual runner. `make test` is a future qualifying invocation only once the manager target is implemented and registered; unrelated passing targets do not satisfy these cases.
+
+## Requirements and Interface Coverage
+
+| Revised PRD scope/outcome | Cases | Design interface |
+|---|---|---|
+| Compatible manager availability and installation | TC-R1-01, TC-R7-01, TC-SETTINGS-01, TC-PAIR-01 | IC-1 |
+| Automatic segment handoff and network realization | TC-R2-01, TC-R2-02, TC-R3-01, TC-INPUT-01, TC-INPUT-02, TC-VNI-01 | IC-2, IC-3 |
+| PR #1971 host compatibility and matching Fabric route targets | TC-RT-01, TC-RT-02, TC-R3-01, TC-PAIR-01 | IC-3 |
+| Owner Subnet limit while preserving physical siblings | TC-R5-04 through TC-R5-07 | IC-4, IC-6 |
+| Disjoint DHCP allocation, gateway and agreed DNS | TC-IPAM-01, TC-R6-01, TC-R4-02, TC-SETTINGS-01 | IC-3 |
+| Permitted VM/physical L2 and routed same-VN connectivity | TC-R4-01, TC-R4-02, TC-PAIR-01 | IC-3, IC-6 |
+| Baseline and SecurityGroup enforcement/update | TC-POLICY-01 through TC-POLICY-05 | IC-5, IC-6 |
+| First-boot preparation and stable VM addresses | TC-ATTACH-01, TC-ATTACH-02 | IC-6 |
+| Retry, cancellation, owned cleanup and diagnostics | TC-RETRY-01, TC-ATTACH-03, TC-DELETE-01, TC-DELETE-02, TC-R8-01 | IC-2, IC-4, IC-6 |
 
 ## Test Cases
 
-### R1: K8s manager registration for EVPN fabric bridging (IPv4 only)
+### Installation and Typed Handoff
 
-#### TC-R1-01: Register cudn_evpn k8s manager via ConfigMap
+#### TC-R1-01: Resolve the installed compatible manager
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-1 | high | automated |
+- **Tier / owner:** Core/installer component integration / owning DEV. **IC:** IC-1. **Boundary:** real registration/controller API with declared installer rendering; no Fabric traffic.
+- **Preconditions:** Installed registration fixtures, networking readiness controller and exact PR #357 registration schema.
+- **Steps:** Install the immutable `cudn_evpn` registration with its `ansible_role` and `network_type: evpn`; select a compatible Fabric registration. Repeat with missing role/type, mutable or duplicate registration and incompatible type.
+- **Expected:** Valid selection records the OSAC role/type. Invalid selection fails with an actionable readiness diagnostic before manager tasks; it never falls back to another manager. No runtime connectivity claim follows from registration success.
 
-##### Preconditions
+#### TC-R2-01: Pass only the accepted typed segment to Kubernetes
 
-- **Tier / owner:** Unit / [DEV].
-- osac-installer deployed to cluster
-- No existing ConfigMap `k8s-manager-cudn-evpn` in osac namespace
+- **Tier / owner:** Core component integration / owning DEV. **IC:** IC-2, IC-3. **Boundary:** controller/job and stored status; Fabric/AAP execution may be fixture-driven.
+- **Preconditions:** Subnet stored input/IPAM and controlled Fabric completion fixture.
+- **Steps:** Complete Fabric create with different integer L2/L3 VNIs; inspect the accepted segment/status update and subsequent Kubernetes task input. Repeat the Kubernetes task and matching delete.
+- **Expected:** Kubernetes create starts only after segment acceptance. It receives `resource`, parent snapshot, recorded `ipam`, exact `network_segment` and explicit tenant; retries/delete reuse those values. No legacy ConfigMap transfer, free-form extraVars or RT field is required.
 
-##### Steps
+#### TC-R2-02: Reject invalid or changed Fabric segments before launch
 
-1. Apply osac-installer Helm chart with cudn_evpn manager enabled
-2. Verify ConfigMap `k8s-manager-cudn-evpn` exists in osac namespace
-3. Verify ConfigMap data.manager = "cudn_evpn"
-4. Verify ConfigMap data.capabilities includes "supports_ipv4: true"
-5. Verify ConfigMap data.capabilities includes "supports_ipv6: false"
+- **Tier / owner:** Core contract/integration / owning DEV. **IC:** IC-2, IC-3. **Boundary:** real typed-output/status acceptance; Fabric output is a fixture.
+- **Preconditions:** Controlled job association and Subnet segment fixtures, including another active resource for conflicts.
+- **Steps:** Supply missing/extra keys, string/bool VNIs, equal/out-of-range VNIs, wrong type, conflicting VNIs, a foreign job result and a result that changes an accepted segment. Include the documented in-progress-delete conflict wait.
+- **Expected:** Malformed/foreign/changed outputs do not replace stored segment or start Kubernetes work. A deleting conflict follows the contract wait/recheck behavior rather than freeing/reusing its VNI early. Tenant diagnostics do not expose other resources' IDs/VNIs.
 
-##### Expected Results
+#### TC-INPUT-01: Exercise all eight entry points and exact outputs
 
-- ConfigMap created with label `osac.openshift.io/k8s-manager: "true"`
-- Capabilities reflect IPv4-only support
-- NetworkClass controller loads cudn_evpn as available k8s manager
+- **Tier / owner:** Contract / DEV OSAC-6761. **IC:** IC-2. **Boundary:** fresh Ansible invocation and captured set_stats; Kubernetes backend is a declared fixture here.
+- **Preconditions:** Exact minimal snapshot fixtures for all four task pairs, without tenant annotations or arbitrary full CR fields.
+- **Steps:** Invoke each task with one `osac_job_vars`; capture artifacts and process outcome. Run proposed VN namespace create/delete and non-owner Subnet no-ops as well as overlay apply.
+- **Expected:** All required files exist. No-output success publishes no `osac_result`; apply publishes exactly `{vm_attachment: {namespace}}`. No version/profile/identity wrapper or secret enters artifacts. State changes use top-level API IDs and explicit tenant. Proposed VN tasks create/safely remove their shared namespace without typed output; they are no longer documented no-ops.
 
-### R2: Fabric-to-k8s manager data dependency
+#### TC-INPUT-02: Reject invalid identities and sanitize failures
 
-#### TC-R2-01: Sequential provisioning fabric then k8s manager
+- **Tier / owner:** Unit/Contract / DEV OSAC-6761. **IC:** IC-2. **Boundary:** input checks and real error serialization; failing backend is a fixture.
+- **Preconditions:** Valid input controls and a write-recording backend fixture containing deliberately sensitive error arguments.
+- **Steps:** Vary missing/mismatched IDs, tenant/parents, manager/task, resource kind, target/interface and duplicate group IDs. Inject a backend timeout and a permanent unsupported rule.
+- **Expected:** Invalid inputs fail before writes. Reported errors contain only nonempty message and boolean retryable, with the expected classification; the play fails. No raw failed-result/invocation, token or secret value is emitted.
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-3 | critical | automated |
+#### TC-SETTINGS-01: Make missing prerequisites recoverable
 
-##### Preconditions
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-1, IC-2, IC-3. **Boundary:** real Kind objects and Ansible environment lookup; prerequisite objects are schema fixtures, not live FRR/OVN.
+- **Preconditions:** Owner-capable Subnet input and a reviewed prerequisite discovery mechanism from Q4.
+- **Steps:** Omit or malform DNS resolver setting, then omit installed VTEP/required FRR/hub prerequisite. Repair one prerequisite at a time and repeat the same input.
+- **Expected:** Each missing/malformed setting/prerequisite fails retryably and names the item without a success artifact. Repair permits convergence without duplicate state. No task silently installs peering or substitutes a default resolver.
 
-- **Tier / owner:** Unit / [DEV].
-- NetworkClass with fabric_manager="netris", k8s_manager="cudn_evpn"
-- VirtualNetwork created with this NetworkClass
-- Mocked Netris fabric returning VNI values
+### CUDN and Address Allocation
 
-##### Steps
+#### TC-R3-01: Realize the exact primary EVPN network
 
-1. Create Subnet via fulfillment-service API
-2. Observe Subnet controller creates fabric AAP Job first
-3. Fabric job completes with VNI data in status.extraVars
-4. Observe controller does not create k8s job until fabric job status shows Successful
-5. Controller extracts l2_vni, l3_vni from fabric job
-6. Observe controller creates k8s AAP Job with VNI data in extra_vars
-7. Verify k8s job extra_vars contains: l2_vni, l3_vni (route targets not passed - CUDN auto-generates)
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-3. **Boundary:** real Kind API plus declared CUDN/prerequisite schema fixtures; no OVN dataplane.
+- **Preconditions:** Valid owner input, exact recorded IPAM/segment and configured prerequisites.
+- **Steps:** Run create twice; inspect persisted CUDN, owner/tenant metadata and selected namespace identity. Compare with recorded input rather than recomputed ranges.
+- **Expected:** One primary Layer2 CUDN has EVPN transport, installed VTEP, supplied L2/L3 VNIs, MTU 1500, full Subnet CIDR, recorded gateway and every non-overlay exclusion. Under the proposed PR #1971 amendment, macVRF.routeTarget is "0:<l2_vni>" and ipVRF.routeTarget is "0:<l3_vni>". No overlay gateway/router-port resource or manager-created peering configuration appears. Actual OVN readiness and matching Fabric RTs are covered by deployed cases; shared-contract approval is a gate.
 
-##### Expected Results
+#### TC-RT-01: Preserve PR #1971's two explicit route targets
 
-- Fabric job completes before k8s job starts (not concurrent)
-- K8s job receives VNI values extracted from fabric job status
-- Subnet.status.conditions shows "K8sManagerWaitingForFabric" event between jobs
+- **Tier / owner:** Unit/Contract / DEV OSAC-6761. **IC:** IC-3. **Boundary:** real Jinja/role rendering; no switch or BGP session.
+- **Preconditions:** PR #1971's existing render assertion and valid distinct typed segment fixtures representing different Fabric producers; the role input contains no vendor selector.
+- **Steps:** Render MAC VNI 31 and IP VNI 32, then repeat with another valid pair and producer-labelled fixtures that supply the same prescribed input shape. Inspect the exact EVPN structure and repeat the render/task input.
+- **Expected:** Values are strings "0:31" and "0:32" in the matching MAC/IP fields; each always follows its respective VNI. The rule applies whenever cudn_evpn is selected, without a Netris-only condition. Other EVPN values and deterministic retry behavior remain correct. Rendering proves only emitted host configuration; it does not establish Fabric acceptance.
 
-#### TC-R2-02: VNI extraction failure when fabric job missing data
+#### TC-RT-02: Verify matching Fabric import/export and expose mismatch
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-3 | high | automated |
+- **Tier / owner:** E2E / QE with Fabric integration owners. **IC:** IC-3. **Boundary:** real OVN/FRR and the selected Fabric's MAC/IP VRFs.
+- **Preconditions:** Reviewed Q5 amendment and an authorized lab with the explicit host RTs and a matching configured Fabric pair; packet probes otherwise permitted by policy.
+- **Steps:** Observe the CUDN RTs and Fabric MAC/IP import/export configuration, imported routes and successful permitted traffic. In the lab, introduce a controlled RT mismatch, observe the affected routes/traffic, then restore the matching configuration. Record each claimed vendor/controller/version separately.
+- **Expected:** The matching pair exchanges the required tenant routes and forwards permitted traffic. The mismatch is detected through RT/route and traffic evidence even if BGP remains established. Restoring matching policies restores the path. No Arista/Cumulus/FRR default or universal pair support is inferred; a host-only change cannot satisfy this case.
 
-##### Preconditions
+#### TC-VNI-01: Enforce the hub-AS/VNI representation limit
 
-- **Tier / owner:** Unit / [DEV].
-- Subnet provisioning in progress, fabric job completed
-- Fabric AAP Job CR exists but status.extraVars missing VNI fields
+- **Tier / owner:** Unit/Contract / DEV OSAC-6761. **IC:** IC-2, IC-3. **Boundary:** validation and recorded side effects; hub-AS source is a fixture.
+- **Preconditions:** Valid segment/control input and authoritative AS values from the reviewed discovery path.
+- **Steps:** Exercise hub AS 65535 and 65536 with VNIs 65535/65536; include VNI 1/16777215 boundaries, 0, above maximum, equal IDs, bool and numeric strings.
+- **Expected:** Contract-valid integers pass the applicable AS constraint. With AS above 65535, any VNI above 65535 fails permanently before mutation with a message naming the rule. Invalid scalar types/ranges/equality never create a network. This case retains PR #357's current shared admission rule pending Q5; it does not claim the bound is intrinsic to explicit 0:VNI or that PR #1971 implements a new guard.
 
-##### Steps
+#### TC-IPAM-01: Preserve the recorded allocation plan
 
-1. Controller attempts to extract VNI from fabric job status
-2. Extraction fails (missing l2_vni field)
-3. Observe controller emits Kubernetes event "VNIExtractionFailed"
-4. Observe Subnet.status.phase = "Failed"
-5. Observe Subnet.status.conditions shows error message referencing fabric job
+- **Tier / owner:** Unit / DEV OSAC-6761. **IC:** IC-3. **Boundary:** IPAM validation/exclusion transform and render; no DHCP server.
+- **Preconditions:** Recorded layouts for split and non-power-of-two shares, with empty physical/lbVip lists and disjoint valid overlay ranges.
+- **Steps:** Produce the CUDN exclusions; enumerate their union against the full Subnet minus overlay ranges. Vary canonical form, overlap/out-of-Subnet input and missing/incorrect gateway.
+- **Expected:** Exclusions exactly cover all non-overlay addresses, including guest-ingress pools, without removing usable overlay addresses. No competing plan or Fabric-derived gateway is calculated. Malformed layouts fail before writes; network/broadcast/gateway are never offered as workload allocations. Empty lists remain valid where the contract permits them.
 
-##### Expected Results
+#### TC-R6-01: Observe real DHCP pools, Fabric gateway and DNS
 
-- Subnet provisioning stops (k8s job never created)
-- Event message includes fabric job name for debugging
-- User can inspect fabric AAP job logs to diagnose
+- **Tier / owner:** E2E / QE. **IC:** IC-3, IC-6. **Boundary:** deployed OVN DHCP, KubeVirt guest, real Fabric/physical DHCP and resolvers.
+- **Preconditions:** Supported reviewed Q1/Q4 mechanisms and an owner Subnet with all nonempty pools, VM and physical client.
+- **Steps:** Boot clients, capture leases and query agreed DNS; renew leases and sample multiple addresses. Inspect gateway ARP and DHCP server behavior with restrictive application policy.
+- **Expected:** VM addresses belong only to overlay pools; physical addresses only to Fabric pools; neither consumes VIP/network/broadcast/gateway addresses. Guests get the full Subnet prefix, recorded Fabric gateway and exact configured resolvers. DNS resolution succeeds. Servers answer only their own interfaces; gateway ARP and DHCP remain usable under baseline restrictions.
 
-### R3: Automatic overlay network provisioning on hosting clusters
+### Owner Subnet and Deletion Races
 
-#### TC-R3-01: CUDN provisioned with EVPN transport
+#### TC-R5-04: Let the first executing create claim ownership
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-5 | critical | automated |
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4. **Boundary:** real Kubernetes state and independent Ansible runs, with core ordering represented explicitly.
+- **Preconditions:** Two sibling Subnet snapshots with reversed creation-time versus execution order; unowned VN state.
+- **Steps:** Run the newer Subnet's create first, then the older one, and retry both. Exercise the default-Subnet ordering as a shared-core fixture.
+- **Expected:** The first successful claim records that Subnet's API ID, independent of timestamp/name. Exactly one network exists. Retries do not change ownership. Default ordering is a core guarantee, not a manager timestamp election.
 
-##### Preconditions
+#### TC-R5-05: Preserve owner VMs when another Subnet is added
 
-- **Tier / owner:** Unit / [DEV].
-- Subnet created with NetworkClass k8s_manager="cudn_evpn"
-- K8s manager job running
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4, IC-6. **Boundary:** real Kind network/state/policy objects; VM execution is omitted.
+- **Preconditions:** Owned network and owner binding plus a sibling's valid recorded plan/segment.
+- **Steps:** Run sibling create/delete and an overlay apply/delete for it; inspect owner resources and recorded sibling plan.
+- **Expected:** Sibling Subnet tasks succeed without creating a second network; overlay apply fails permanently naming the owner-network limitation and writes no attachment artifacts. Its absent delete succeeds. Owner bindings/network and both recorded plans remain unchanged. A core/Fabric companion check establishes that physical sibling attachments remain available.
 
-##### Steps
+#### TC-R5-06: Release ownership without handover
 
-1. Observe k8s manager playbook creates namespace with label `k8s.ovn.org/primary-user-defined-network`
-2. Observe playbook creates ClusterUserDefinedNetwork CR with:
-   - metadata.name = VirtualNetwork name
-   - spec.network.topology = "Layer2"
-   - spec.network.transport = "EVPN"
-   - spec.network.evpn.vtep = "tenant-vtep"
-   - spec.network.evpn.macVRF.vni = l2_vni from extra_vars
-   - spec.network.evpn.ipVRF.vni = l3_vni from extra_vars
-3. Wait for CUDN status.conditions Ready=True
-4. Verify CUDN status.vrfName is set (Linux VRF device name)
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4. **Boundary:** real Kind objects and Ansible cleanup.
+- **Preconditions:** Owner Subnet, a surviving sibling and dependency-ordered attachment cleanup already complete.
+- **Steps:** Delete the owner, repeat delete, then inspect the sibling; run a subsequent new Subnet create. Include no-op deletion of a non-owner and already-absent state.
+- **Expected:** Owner network/baseline are removed before claim release; the VN-owned namespace and surviving group policies remain. A later owner reuses that namespace without inheriting old bindings. No surviving sibling is promoted. A subsequent create can claim the released network. Non-owner/absent cleanup does not delete foreign or newly claimed state.
 
-##### Expected Results
+#### TC-R5-07: Exercise owner termination and late create/delete writes
 
-- CUDN CR exists with correct VNI values
-- CUDN status transitions to Ready within 60 seconds
-- OVN-Kubernetes provisions VXLAN interfaces on worker nodes
+- **Tier / owner:** Component integration / DEV OSAC-6761 with core lifecycle DEV. **IC:** IC-4. **Boundary:** real API conflicts and independently paused Ansible/backend operations; no packet path.
+- **Preconditions:** Reviewed Q3 ownership/delete-wins mechanism and controllable barriers at claim/create/delete writes.
+- **Steps:** Start another create while owner CR is terminating; finish owner cleanup and retry. Separately cancel a create, complete its delete, then release its delayed write. Repeat the late-write trace for Namespace, CUDN and NetworkPolicy. Race cleanup from an old API ID with a new claim.
+- **Expected:** A terminating owner is treated as present and produces a retryable claim failure. Retry after release can claim safely. Late writes after successful delete leave no state for the deleted ID. Old cleanup never removes the new owner's objects. A separate tombstone preflight read or journal without an enforced mutation fence fails this case. No manager Lease is required.
 
-### R4: VM-to-fabric connectivity (L2 same-subnet and L3 cross-subnet scenarios)
+### Policy and Namespace Preparation
 
-#### TC-R4-01: L2 same-subnet VM to bare-metal connectivity
+Current implementation gap: the manager's SecurityGroup and policy-binding work has not been implemented. TC-POLICY-01–05 and the attachment cases below are required OSAC-6761 coverage. Their presence in this plan is not passing evidence, and the RT fix does not satisfy them.
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-5, IC-6 | critical | manual |
+#### TC-POLICY-01: Create unbound groups and update the shared policy
 
-##### Preconditions
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-5. **Boundary:** real policy/state API objects; no packet enforcement.
+- **Preconditions:** Reviewed D26/Q2 shared VN namespace model, VN snapshot and group rules; initially no Subnet, network or attachment.
+- **Steps:** Run VN create twice, then create the group before a Subnet exists. Bind two target IDs in the shared namespace, replace rules with a rerun, retry, then delete after unbinding and repeat deletion. Include another group's policies and a foreign-tenant ownership control.
+- **Expected:** Initial group creation needs no network and selects no VM. One VN-owned namespace and one SG-owned policy exist; all bound target IDs follow its accepted replacement. Retries create no duplicates. Group deletion removes only its policy and preserves the namespace. Repeated deletion succeeds; other groups and tenant state remain unchanged. No attachment rerun is needed for the update.
 
-- **Tier / owner:** E2E / [QE].
-- CUDN provisioned with subnet 200.200.1.0/24
-- VirtualMachine deployed in CUDN namespace, IP 200.200.1.3
-- Bare-metal node provisioned on Netris fabric in same subnet, IP 200.200.1.10
-- FRR advertising EVPN routes to fabric
+#### TC-POLICY-02: Reject unsupported policy and preserve empty directions
 
-##### Steps
+- **Tier / owner:** Unit/Contract / DEV OSAC-6761. **IC:** IC-2, IC-5. **Boundary:** rule translation and captured object replacements; Kubernetes policy engine omitted.
+- **Preconditions:** Last-successful group rules and exact TCP/UDP/all-protocol inputs, empty directions and ICMP cases.
+- **Steps:** Render both policy directions, port boundaries/ranges and remote CIDRs. Attempt malformed/unsupported rules and inject replacement failure. Exercise the selected ICMP implementation or permanent rejection path.
+- **Expected:** Every NetworkPolicy includes Ingress and Egress, even with no rules in one direction. Rules retain exact allowed traffic semantics. Unsupported ICMP is never silently dropped; rejection is permanent before mutation. A failed replacement retains the object's previous rules.
 
-1. Verify VM running: `oc get vmi -n <namespace>`
-2. Console into VM: `virtctl console <vm-name>`
-3. Ping bare-metal node: `ping 200.200.1.10`
-4. Verify FRR shows Type-2 route for VM MAC: `vtysh -c "show bgp l2vpn evpn" | grep <vm-mac>`
-5. Verify Netris fabric learned VM MAC via EVPN
+#### TC-POLICY-03: Deny unbound traffic while preserving DHCP/ARP
 
-##### Expected Results
+- **Tier / owner:** E2E / QE. **IC:** IC-5. **Boundary:** actual primary EVPN dataplane.
+- **Preconditions:** Ready owner network, baseline installed, unbound VM/import or other pods and a reachable test endpoint.
+- **Steps:** Probe application ingress/egress from unbound pods; perform DHCP renewal and gateway/peer ARP. Where backend supports the restriction, send a tenant-originated DHCP reply.
+- **Expected:** Application traffic is blocked both ways before any binding. Owning DHCP and permitted ARP succeed. Supported rogue-DHCP protection blocks tenant replies. Results identify actual backend/version and any unimplemented protection explicitly.
 
-- Ping succeeds (RTT <10ms)
-- FRR advertises Type-2 EVPN route with VM MAC and IP
-- Netris leaf switch has VM MAC in EVPN table pointing to OCP VTEP
+#### TC-POLICY-04: Enforce selected group union and updates
 
-#### TC-R4-02: L3 cross-subnet VM to bare-metal connectivity
+- **Tier / owner:** E2E / QE. **IC:** IC-5, IC-6. **Boundary:** real VM/Fabric traffic and policy engine.
+- **Preconditions:** Two groups with distinct ingress/egress allows, multiple bound VMs and an unbound control pod; known last-successful rules.
+- **Steps:** Probe allowed/denied TCP/UDP/all cases and stateful replies, replace a group's rules, probe each bound target in the shared namespace, and exercise the permanent unsupported-ICMP path.
+- **Expected:** Each VM receives exactly its selected union in both directions, follows the successful update without reattachment, and permits stateful replies. Empty directions allow no application traffic through that policy contribution. Unbound/control traffic remains protected. Unsupported ICMP is a visible failed group, not an unfiltered success.
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-5, IC-6 | critical | manual |
+#### TC-POLICY-05: Converge a bind racing a rule replacement
 
-##### Preconditions
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-5, IC-6. **Boundary:** real policy/state API conflicts with controlled independent Ansible operations.
+- **Preconditions:** Reviewed Q2 atomicity/conflict algorithm and a group with two rule generations.
+- **Steps:** Pause apply after reading group state, replace rules, resume bind; reverse the order, inject resourceVersion conflicts/failed writes and attempt an older rule generation. Rerun the permitted retry paths.
+- **Expected:** A successful bind/update converges to the accepted current rule state; conflict is retryable rather than a stale success. Failed replacement preserves last-successful rules according to the reviewed backend guarantees. No manager lock or VM inspection is used.
 
-- **Tier / owner:** E2E / [QE].
-- CUDN provisioned with subnet 200.200.1.0/24
-- VirtualMachine deployed in CUDN namespace, IP 200.200.1.3
-- Bare-metal node provisioned on Netris fabric in different subnet 200.200.2.0/24, IP 200.200.2.10
-- Both subnets under same Netris VPC (shared ipVRF)
+#### TC-ATTACH-01: Prepare deterministic namespace and policy before a VM
 
-##### Steps
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-2, IC-5, IC-6. **Boundary:** real Kind namespace/selection/policy writes and captured result; no VM CR is installed.
+- **Preconditions:** VN-created namespace, owner network and existing group policies; two target ComputeInstance API IDs; absence of VM/VMI APIs proves no dependency on VM reads.
+- **Steps:** Apply both targets twice and across fresh Ansible processes. Inspect shared namespace labels, primary-network selection, policy membership selectors and set_stats. Supply a foreign-tenant namespace collision and mismatched owner input.
+- **Expected:** Both targets return the same VN-owned namespace on every retry, with the exact tenant label, matching primary network and membership selectors on `osac.openshift.io/compute-instance-id`. Only namespace is returned. Collisions fail without editing foreign state. Core consumer fixtures show VM creation waits for accepted preparation and supplies its own labels/l2bridge.
 
-1. Console into VM
-2. Ping bare-metal node in different subnet: `ping 200.200.2.10`
-3. Verify FRR shows Type-5 route for CUDN prefix: `vtysh -c "show bgp l2vpn evpn" | grep Type-5 | grep 200.200.1.0`
-4. Verify Netris VPC routing table includes both subnets
+#### TC-ATTACH-02: Keep the VM address through restart and migration
 
-##### Expected Results
+- **Tier / owner:** E2E / QE. **IC:** IC-3, IC-6. **Boundary:** actual KubeVirt restart/live migration, OVN allocation and Fabric binding.
+- **Preconditions:** Reviewed Q1 supported mechanism, migratable VM, observed overlay address and completed Fabric policy bind.
+- **Steps:** Record address/DHCP/network state, restart the VM, then migrate it to another eligible hub node. Observe address and permitted traffic after each transition without a new allocation/bind input.
+- **Expected:** The same address is retained within the recorded overlay pool; Fabric traffic continues with the existing binding after convergence. No per-operation RT or duplicate allocation is introduced. Record actual supported versions and interruption measurements without inventing a latency SLA.
 
-- Ping succeeds (routed via ipVRF)
-- FRR advertises Type-5 EVPN route for 200.200.1.0/24 prefix
-- Traffic encapsulated with L3 VNI (ipVRF), not L2 VNI (macVRF)
+#### TC-ATTACH-03: Clean only owned attachment resources
 
-### R5: Single-subnet-per-VirtualNetwork constraint for this k8s manager
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4, IC-6. **Boundary:** real namespace/policy/state API objects.
+- **Preconditions:** Two live target bindings and a foreign-owned control in the VN-owned namespace; groups contain current rules.
+- **Steps:** Delete one attachment twice; exercise partial apply state and an unsupported Subnet attachment that created nothing. Attempt cleanup with stale/foreign ownership and with another live resource present.
+- **Expected:** Only the target's owned binding/artifacts disappear; the other binding, shared namespace and foreign objects remain. The VN namespace is never removed by attachment deletion; other memberships and current group rules remain unchanged. Never-created cleanup succeeds. No VM/VMI is read, patched or deleted by the manager.
 
-#### TC-R5-01: Second subnet creation rejected for cudn_evpn NetworkClass
+### Retry, Deletion and Operational Evidence
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-2 | critical | automated |
+#### TC-RETRY-01: Resume partial work and clean after cancellation
 
-##### Preconditions
+- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-2, IC-4, IC-5, IC-6. **Boundary:** fresh Ansible processes and real API state, with controlled failure injection.
+- **Preconditions:** Fixtures for all eight task entry points and barriers after each meaningful backend write.
+- **Steps:** Interrupt creates/applies at each write; retry with the same stored input or invoke matching delete. Include process loss before request submission, after submission, and after backend commit before acknowledgement; transient API failure; permanent unsupported input; and a delete before create ever succeeded.
+- **Expected:** Retries converge with the same identities/output, without duplicates or changed addresses/owners. Unsupported input is final, transient faults publish retryable errors, and deletes complete owned cleanup from partial/absent state. An unknown create outcome keeps cleanup retryably pending; an empty GET or timeout alone cannot produce a successful delete. Indefinite unknown state does not establish restart recovery. Failed deletes remain failures for core to retry; no success artifact conceals a cleanup error.
 
-- **Tier / owner:** Unit / [DEV].
-- NetworkClass with k8s_manager="cudn_evpn"
-- VirtualNetwork created with this NetworkClass
-- One Subnet already exists under this VirtualNetwork
+#### TC-DELETE-01: Observe VMaaS-owned teardown before network cleanup
 
-##### Steps
+- **Tier / owner:** E2E / QE with core lifecycle DEV fixtures. **IC:** IC-4, IC-6. **Boundary:** deployed VMaaS/operator/AAP/OVN/Fabric.
+- **Preconditions:** Running owner VM and selected group; sibling/foreign live controls; ability to inject a manager cleanup failure.
+- **Steps:** Delete the VM; observe VMaaS removal before Fabric then Kubernetes attachment deletes. Delete the owner Subnet after attachments, then its groups/VN through dependency guards. Retry a failed cleanup.
+- **Expected:** Manager tasks never delete the VM. Finalizers retain ownership until cleanup succeeds. Network/baseline removal follows attachment teardown and releases the owner without handover. The VN namespace and surviving groups remain through Subnet deletion; final VN cleanup removes its namespace only after child teardown and foreign/live-resource safety checks. Foreign/sibling live resources remain, and no released VNI/state is reused before its owning Fabric delete succeeds.
 
-1. Attempt to create second Subnet under same VirtualNetwork via fulfillment-service API
-2. Observe API response
+#### TC-DELETE-02: Review stale-VRF support without automatic disruption
 
-##### Expected Results
+- **Tier / owner:** Documentation review / documentation DEV; any recovery execution needs the platform team's approved lab procedure. **IC:** IC-4.
+- **Preconditions:** A deleted CUDN and evidence of an apparent node VRF remnant; inventory of remaining live networks/attachments.
+- **Steps:** Verify the support guidance requests ownership/OVN/FRR evidence and platform review; inspect manager delete behavior for disruptive host operations.
+- **Expected:** Guidance distinguishes a remnant from a live owned network. Routine delete never restarts networking pods or deletes host VRFs. Any platform recovery records its effect on other node workloads; no direct-delete recipe is treated as universally safe.
 
-- API returns HTTP 400 Bad Request
-- Response code = `FailedPrecondition`
-- Error message includes: "NetworkClass with k8s_manager 'cudn_evpn' supports only one subnet per VirtualNetwork"
-- Error message includes: "OVN Connectors limitation"
-- Error message includes name of existing subnet
+#### TC-R7-01: Review installation and Enclave handoff guidance
 
-#### TC-R5-02: Multiple subnets allowed for different k8s manager
+- **Tier / owner:** Documentation review / documentation DEV, coordinated with OSAC-6769 and Enclave owners. **IC:** IC-1.
+- **Preconditions:** Current installation reference, confirmed plugin/Wizard consumer/version when available.
+- **Steps:** Review VTEP/FRR/node peering, shared hub AS/VNI/MTU, underlay VTEP routing, DNS setting/environment and immutable registration. Trace installer schema → plugin → Wizard controls/errors.
+- **Expected:** Requirements and diagnostic examples distinguish the approved baseline from the proposed RT and VN namespace lifecycle amendments; Fabric owns the gateway, and the compatibility example shows both explicit 0:VNI host fields plus required matching Fabric import/export. Required consumer/amendment work is tracked with clear ownership/status; proposed drafts are not described as approved contracts, created assignments or verified runtime support.
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-2 | high | automated |
+#### TC-R8-01: Review actionable diagnostic and ownership guidance
 
-##### Preconditions
+- **Tier / owner:** Documentation review / documentation DEV. **IC:** IC-1, IC-2, IC-4.
+- **Preconditions:** Sanitized example task errors and CUDN/namespace/FRR/Fabric evidence.
+- **Steps:** Follow guidance for missing prerequisites, AS/VNI rejection, owner-limit failure, policy rejection, transient conflict and traffic failure despite successful tasks.
+- **Expected:** Each path identifies the responsible setting/owner and supported repair/lifecycle action. Read-only commands show segment/route/peering/ownership evidence. No secret, other-tenant IDs, arbitrary finalizer removal or unsupported adoption path is exposed.
 
-- **Tier / owner:** Unit / [DEV].
-- NetworkClass with k8s_manager="cudn_localnet" (not cudn_evpn)
-- VirtualNetwork created with this NetworkClass
-- One Subnet already exists under this VirtualNetwork
+#### TC-PAIR-01: Record the supported real EVPN pair
 
-##### Steps
+- **Tier / owner:** E2E / QE with Fabric and OVN integration owners. **IC:** IC-1, IC-3, IC-5, IC-6. **Boundary:** complete deployed path and real Netris initially.
+- **Preconditions:** Q1–Q5 closure, approved shared RT amendment, qualifying hub/Fabric infrastructure, applicable service profiles and actual common-runner entrypoint when supplied by core.
+- **Steps:** Execute applicable VM/task profiles and the referenced traffic/lifecycle cases. Capture actual versions, inputs, gateway/RT/route behavior, commands and each pass/fail/skip. Repeat separately for any additional claimed Fabric pair.
+- **Expected:** Report distinguishes real endpoints from fixtures and required skips from passes. It resolves the provisional Fabric route behavior from evidence. Registration/unit/Kind success is not accepted as proof of an Arista/Cumulus/Netris packet path.
 
-1. Attempt to create second Subnet under same VirtualNetwork
-2. Observe API response
+#### TC-R4-01: Prove permitted same-Subnet VM-to-physical L2 traffic
 
-##### Expected Results
+- **Tier / owner:** E2E / QE. **IC:** IC-3, IC-5, IC-6. **Boundary:** real Fabric, VM and physical client.
+- **Preconditions:** VM on owner Subnet and physical peer on that same L2 segment, completed bindings and policy permitting a known TCP/UDP probe.
+- **Steps:** Probe both directions with allowed policy, remove the necessary allow at one enforcement point, and repeat; inspect actual MAC/IP and EVPN learning.
+- **Expected:** Allowed probes and replies succeed, one-sided policy denial blocks application traffic, and the learned path belongs to the recorded segment/VTEP. No unapproved latency threshold or unsupported ICMP assumption determines success.
 
-- API returns HTTP 201 Created
-- Second Subnet provisioned successfully
-- Single-subnet validation skipped (conditional on k8s_manager)
+#### TC-R4-02: Prove Fabric-routed traffic within one VirtualNetwork
 
-#### TC-R5-03: Second subnet allowed with skip-k8s-manager annotation (fabric-only)
+- **Tier / owner:** E2E / QE. **IC:** IC-3, IC-5, IC-6. **Boundary:** real Fabric IP-VRF, owner VM and physical peer on a sibling Subnet.
+- **Preconditions:** Same VN/L3 VNI, distinct Subnet/L2 VNIs, a valid owner overlay attachment and a physical sibling attachment, with permitted policy.
+- **Steps:** Probe the remote Subnet through the recorded Fabric gateway and inspect ARP, routes and the actual EVPN path. Repeat with policy denial and an unrelated overlapping-CIDR VN as an isolation control.
+- **Expected:** Permitted same-VN routed traffic succeeds; denied/unrelated-VN traffic fails. The Fabric supplies routing without a second CUDN gateway or inter-VRF-peering assumption. Record actual supported route types; do not require type-5 until the lab establishes that behavior.
 
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-2 | high | automated |
+## Historical Mapping Changes and Retired IDs
 
-##### Preconditions
+| Existing ID | Earlier requirement/IC mapping | Current disposition |
+|---|---|---|
+| TC-R1-01 | R1 / IC-1 | Retained; exact immutable registration now belongs to core/installer integration |
+| TC-R2-01, TC-R2-02 | R2 / IC-3 | Retained; now IC-2/IC-3, typed accepted segment replaces legacy extraVars extraction |
+| TC-R3-01 | R3 / IC-5 | Retained; now IC-3, exact realization and real API boundary |
+| TC-R4-01, TC-R4-02 | R4 / IC-5/IC-6 | Retained; now IC-3/IC-5/IC-6, policy-controlled probes and observed route types |
+| TC-R5-01 | R5 / IC-2 | Retired: second-Subnet API rejection is superseded by owner-limit cases TC-R5-04–07 |
+| TC-R5-02 | R5 / IC-2 | Retired: another Kubernetes Manager type is not this release's supported path |
+| TC-R5-03 | R5 / IC-2 | Retired: skip annotation is not the approved owner-limit interface; TC-R5-05 covers allowed physical siblings |
+| TC-R6-01 | R6 / IC-5 | Retained; now IC-3/IC-6, recorded plan and real DHCP/DNS replace inferred Fabric exclusions |
+| TC-R7-01, TC-R8-01 | R7/R8 / no IC | Retained; now IC-1 and IC-1/IC-2/IC-4 respectively |
+| TC-R9-01 | R9 / no IC | Retired: dual gateway MAC coordination is replaced by the Fabric-only gateway contract; covered by TC-R6-01/TC-R4-02 |
+| TC-DELETE-01 | Deletion / IC-5 | Retained; now IC-4/IC-6, VMaaS owns VM removal and core orders cleanup |
+| TC-DELETE-02 | Recovery / no IC | Retained as documentation review, IC-4; no unverified destructive platform recovery procedure |
 
-- **Tier / owner:** Unit / [DEV].
-- NetworkClass with k8s_manager="cudn_evpn"
-- VirtualNetwork created with this NetworkClass
-- One Subnet already exists under this VirtualNetwork (without skip annotation, CUDN created)
+Earlier R1–R9 labels were derived test-plan groupings, not a numbered requirements section of the OSAC PRD template. This revision maps cases to named current PRD outcomes instead of adding invented FR IDs.
 
-##### Steps
+## Gaps and Evidence Still Required
 
-1. Create second Subnet under same VirtualNetwork with annotation `osac.openshift.io/skip-k8s-manager: "true"`
-2. Observe API response
-3. Verify Subnet provisioning only dispatches to fabric manager (Netris)
-4. Verify no CUDN created for second Subnet
-5. Verify Netris VNet created under same VPC as first Subnet
-6. Verify first Subnet's CUDN remains unchanged
-
-##### Expected Results
-
-- API returns HTTP 201 Created (validation excludes subnets with skip annotation)
-- Second Subnet status transitions to READY
-- Subnet job history shows only fabric manager job (no k8s manager job)
-- Netris VPC has two VNets (one from first Subnet, one from second)
-- First Subnet's CUDN namespace and resources unaffected
-- Second Subnet has no associated namespace or CUDN
-
-### R6: Non-conflicting IP address assignment
-
-#### TC-R6-01: VM receives IP from OVN DHCP, Netris DHCP coexists safely
-
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-5 | high | manual |
-
-##### Preconditions
-
-- **Tier / owner:** E2E / [QE].
-- CUDN provisioned with subnet 200.200.1.0/24
-- Netris VNet configured with DHCP enabled (default), DHCP range 200.200.1.100-200.200.1.200
-
-##### Steps
-
-1. Verify CUDN `spec.network.layer2.reservedSubnets` includes fabric reserved range (REQUIRED)
-2. Verify k8s job extra_vars contains fabric_reserved_range from fabric job ConfigMap
-3. Deploy VirtualMachine in CUDN namespace
-4. Verify VM receives IP address via DHCP
-5. Check VM received IP from OVN DHCP (inside VM: check DHCP server IP in lease file)
-6. Verify VM IP is not in Netris DHCP range (not 200.200.1.100-200)
-7. Verify VM IP is not in fabric reserved range (reservedSubnets)
-8. Check Netris DHCP logs — verify no DHCP requests from VM MAC address
-9. Verify VM IP is in subnet CIDR (200.200.1.0/24)
-
-##### Expected Results
-
-- CUDN `reservedSubnets` field is populated (k8s job fails if fabric_reserved_range missing from fabric job ConfigMap)
-- VM IP assigned by OVN-Kubernetes DHCP (not Netris DHCP)
-- VM DHCP lease shows OVN DHCP server IP (logical switch IP, not Netris SVI)
-- Netris DHCP logs show no requests from VM MAC (OVN intercepts DHCP inside logical switch)
-- **VM IP does not collide with fabric-managed IPs (gateway .1, SVIs, DHCP pool)**
-- OVN IPAM respects the reserved range (correctness requirement, not optional)
-- Both DHCP servers coexist without conflict (validated behavior)
-
-### R7: Installation prerequisites documentation
-
-#### TC-R7-01: Installation guide covers all manual prerequisites
-
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| — | high | manual |
-
-##### Preconditions
-
-- Access to osac-installer documentation
-
-##### Steps
-
-1. Read installation guide for cudn_evpn k8s manager
-2. Verify guide documents:
-   - VTEP CR creation
-   - FRRConfiguration underlay BGP peering
-   - RouteAdvertisements CR
-   - BGP underlay connectivity (worker ↔ fabric switch)
-   - Gateway MAC coordination requirement
-3. Verify guide includes validation commands to check prerequisites complete
-
-##### Expected Results
-
-- All manual prerequisites documented with examples
-- Validation commands provided (check VTEP exists, FRR BGP session up, etc.)
-- Guide warns against skipping gateway MAC coordination
-
-### R8: Diagnostic tooling documentation
-
-#### TC-R8-01: Diagnostic commands documented for troubleshooting
-
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| — | medium | manual |
-
-##### Preconditions
-
-- Access to osac documentation
-
-##### Steps
-
-1. Read troubleshooting guide for cudn_evpn
-2. Verify guide documents:
-   - FRR VNI status check: `vtysh -c "show evpn vni"`
-   - BGP EVPN routes check: `vtysh -c "show bgp l2vpn evpn"`
-   - CUDN status check: `oc get clusteruserdefinednetwork`
-   - Netris VNet query via API
-   - Packet capture for VXLAN traffic
-
-##### Expected Results
-
-- Diagnostic commands cover VNI mismatch detection
-- Commands cover gateway MAC comparison
-- Commands cover BGP session verification
-- Known failure modes documented with symptoms and fixes
-
-### R9: Gateway MAC coordination prerequisite
-
-#### TC-R9-01: Gateway MAC documented as manual prerequisite
-
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| — | high | manual |
-
-##### Preconditions
-
-- Access to installation guide
-
-##### Steps
-
-1. Read installation prerequisites
-2. Verify guide documents gateway MAC coordination requirement
-3. Verify guide explains consequences of mismatch (L3 traffic fails, ARP flapping)
-4. Verify guide provides commands to check gateway MAC on both sides
-
-##### Expected Results
-
-- Gateway MAC coordination listed as prerequisite
-- Guide explains why MACs must match
-- Guide provides diagnostic commands to compare CUDN gateway MAC with Netris VNet gateway MAC
-
-### Subnet Deletion: Ordered cleanup prevents stale VRFs
-
-#### TC-DELETE-01: Subnet deletion with running VMs
-
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| IC-5 | high | automated |
-
-##### Preconditions
-
-- **Tier / owner:** E2E / [QE].
-- CUDN provisioned with subnet
-- VirtualMachine running in CUDN namespace
-- Subnet marked for deletion (finalizer present)
-
-##### Steps
-
-1. Delete Subnet CR
-2. Observe k8s manager delete playbook runs
-3. Verify VMs deleted before CUDN deletion attempted
-4. Verify playbook waits for all VMIs terminated (retries with timeout)
-5. Verify CUDN deleted after VMIs gone
-6. Verify namespace deleted after CUDN deleted
-7. Check for stale VRF on worker nodes (should not exist)
-
-##### Expected Results
-
-- Deletion order enforced: VMs → wait VMIs → CUDN → namespace
-- No stuck CUDN finalizer (deletion completes within timeout)
-- **Normal case:** No stale VRF devices persist after CUDN deleted
-- **Rare failure case:** Stale VRF requires manual recovery (see TC-DELETE-02 and Support Procedures)
-- Subnet CR finalizer removed, CR deleted successfully
-
-#### TC-DELETE-02: Stale VRF manual recovery (troubleshooting)
-
-| Interface Change | Priority | Automation |
-|-----------------|----------|------------|
-| — | low | manual |
-
-##### Preconditions
-
-- **Tier / owner:** E2E / [QE].
-- CUDN deleted successfully (confirmed via `oc get clusteruserdefinednetwork`)
-- VRF device persists on worker node (observed rare race condition)
-- Cloud Infrastructure Admin troubleshooting connectivity issue
-
-##### Steps
-
-1. Detect stale VRF:
-   ```bash
-   oc debug node/<node-name> -- chroot /host ip link show type vrf
-   ```
-2. Verify CUDN is deleted: `oc get clusteruserdefinednetwork <vnet-name>` returns NotFound
-3. Follow manual recovery procedure from Support Procedures section
-4. Option 1: Restart ovnkube-node pod (impacts all VMs on node)
-5. Option 2: Direct VRF deletion via node debug (less disruptive)
-6. Verify VRF cleaned up after recovery
-
-##### Expected Results
-
-- VRF cleanup procedure documented in Support Procedures
-- **Automatic restart NOT performed by delete_subnet.yaml** (too disruptive for routine delete)
-- Manual recovery successful (VRF removed after procedure)
-- Documented impact: ovnkube-node restart affects all VMs on node (not just deleted namespace)
-
-## Gaps
-
-None identified. All requirements map to test cases, all interface changes exercised.
+1. Q1–Q4 engineering closure, D26's shared VN namespace lifecycle amendment and Q5's RT amendment/API handoff remain review gates. Their cases are required coverage, not implementation or lab passes. The later API path needs an agreed schema and separate fixtures using authoritative RT values that differ from the compatibility formula.
+2. The manager-focused Ansible/Kind integration target and all newly required task/policy/attachment coverage must be implemented under OSAC-6761. Existing render/task-structure checks are insufficient for real API boundaries.
+3. Shared snapshots, saved IPAM, output validation and VM/installer activation remain OSAC-6766/6768/6769 work. Their cases cannot be satisfied by a standalone manager fixture.
+4. DNS/policy/address-stability evidence requires actual OVN/KubeVirt; claim/delete races require real API concurrency. Fakes and parsing do not establish those guarantees.
+5. Real Netris EVPN interoperability and the common conformance invocation remain unexecuted/unconfirmed here. Additional Fabric pairs, including Arista or Cumulus, require separate reports.
+6. No Jira issue, assignment or completed conformance result is created by this plan. Refresh downstream task/test references after documentation review.
