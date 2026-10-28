@@ -39,7 +39,7 @@ No dedicated CUDN component target or generic conformance command is claimed to 
 | Existing VN/Subnet APIs, identities and allocations; fresh-install-only activation | TC-COMPAT-01, TC-COMPAT-02, TC-COMPAT-03; deployed retry in TC-PAIR-01 | IC-1, IC-2, IC-3, IC-4, IC-6 |
 | First-boot preparation and stable VM addresses | TC-ATTACH-01, TC-ATTACH-02 | IC-6 |
 | Retry, cancellation, owned cleanup and diagnostics | TC-RETRY-01, TC-ATTACH-03, TC-DELETE-01, TC-DELETE-02, TC-R8-01 | IC-2, IC-4, IC-6 |
-| Provider backend cleanup after a killed task and late write | Shared contract TC-DELETE-02; CUDN hub-object races TC-R5-07 | Inspect provider backend state after releasing a held write after delete success |
+| Provider backend cleanup after a killed task and late write | Shared contract TC-DELETE-02; CUDN hub-object races TC-R5-07 | Verify ordered cleanup or a fenced late write, with no post-success resurrection |
 
 ## Test Cases
 
@@ -180,9 +180,14 @@ No dedicated CUDN component target or generic conformance command is claimed to 
 #### TC-R5-07: Exercise owner termination and late create/delete writes
 
 - **Tier / owner:** Component integration / DEV OSAC-6761 with core lifecycle DEV. **IC:** IC-4. **Boundary:** real API conflicts and independently paused Ansible/backend operations for Kubernetes Manager-owned hub objects; no packet path. The provider Fabric backend is covered separately by shared contract [TC-DELETE-02](/enhancements/OSAC-1433-network-manager-integration-contract-networking/testplan.md#tc-delete-02).
-- **Preconditions:** Reviewed Q3 ownership/delete-wins mechanism and controllable barriers at claim/create/delete writes.
-- **Steps:** Start another create while owner CR is terminating; finish owner cleanup and retry. Separately cancel a create, complete its delete, then release its delayed write. Repeat the late-write trace for Namespace, CUDN and NetworkPolicy. Race cleanup from an old API ID with a new claim.
-- **Expected:** A terminating owner is treated as present and produces a retryable claim failure. Retry after release can claim safely. Late writes after successful delete leave no state for the deleted ID. Old cleanup never removes the new owner's objects. A separate tombstone preflight read or journal without an enforced mutation fence fails this case. No manager Lease is required.
+- **Preconditions:** Reviewed Q3 ownership/delete-wins mechanism; controls that pause/release exact Namespace, CUDN and NetworkPolicy mutations, expose cleanup progress/waiting and authoritative settlement, and record commit/rejection order. Keep a separate live ownership control and snapshot its state. Use the configured cleanup deadline as a failure bound, not proof of mutation completion.
+- **Steps:**
+  1. Start another create while the owner CR is terminating; finish owner cleanup and retry the claim.
+  2. Separately pause an already-issued create mutation before commit, cancel its job and start matching deletion with the stored input.
+  3. Observe deletion reaching cleanup, waiting for the outstanding operation, or succeeding; then release the exact mutation without waiting for deletion to succeed first.
+  4. Await operation settlement and successful cleanup within the configured deadline. Repeat the trace for Namespace, CUDN and NetworkPolicy.
+  5. Inspect owned objects and mutation history before a repeated delete or corrective cleanup. Verify the live control is unchanged, then require repeated deletion to succeed. Separately race cleanup from an old API ID with a new claim and verify the new owner's objects survive.
+- **Expected:** A terminating owner is treated as present and produces a retryable claim failure; retry after release can claim safely. Ordered cleanup may stay pending until the held operation settles, then removes all state before success. If delete succeeds first, the released write must be rejected or become a no-op through an enforced backend fence; no later or transient recreation is permitted. Post-success corrective cleanup cannot hide a leak. Old cleanup never removes the new owner's objects. A preflight tombstone read or journal alone does not prove safety; unknown/indefinitely pending operations do not pass. No manager Lease is required. The shared [TC-DELETE-02 oracle](/enhancements/OSAC-1433-network-manager-integration-contract-networking/testplan.md#tc-delete-02) defines safe ordered/fenced and unsafe fixture controls.
 
 ### Policy and Namespace Preparation
 
