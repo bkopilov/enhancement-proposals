@@ -33,13 +33,17 @@ The reviewed amendment must coordinate the Fabric implementation/settings and in
 
 Replace the `no route targets` phrase in the CUDN creation contract with:
 
-> Set evpn.macVRF.routeTarget to the string 0:<l2_vni> and evpn.ipVRF.routeTarget to the string 0:<l3_vni> for all cudn_evpn networks. Preserve the corresponding VNI and installed VTEP values.
+> Set evpn.macVRF.routeTarget to the string 0:<l2_vni> and evpn.ipVRF.routeTarget to the string 0:<l3_vni> for every cudn_evpn network created during fresh activation of the amended contract. Preserve the corresponding VNI and installed VTEP values.
 
 The current `network_segment` remains exactly `{type, l2_vni, l3_vni}`. This compatibility change needs no invented RT input key.
 
 ### Existing Hub-AS/VNI Admission Rule
 
 The manager revision retains the baseline guard until the shared maintainers decide its disposition. This proposal does not assert that 0:VNI itself has the hub-AS-derived bound, or silently expand the accepted VNI range. The shared source/API validation, manager checks, Fabric configuration and boundary fixtures must agree on the reviewed outcome.
+
+## Existing VirtualNetwork and Subnet State
+
+The explicit RT target applies when freshly activating this amended contract with any selected Fabric. It preserves the supplied L2/L3 VNIs, VN/Subnet IDs, CIDRs, gateway and recorded pools. It does not authorize patching live legacy CUDNs, replacing their namespaces or changing existing Fabric import/export policy during a role rollout. Core/installer rejects unsupported legacy activation before writes; an RT mismatch is a compatibility gate rather than permission to mutate existing networking. A future live transition needs a separately reviewed, coordinated host/Fabric procedure. PR #357's fresh-install-only boundary remains in force. [User: 2026-10-28; Clarify: D27]
 
 ## Intended Later API Integration
 

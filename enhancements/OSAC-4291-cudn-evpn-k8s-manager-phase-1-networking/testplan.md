@@ -4,7 +4,7 @@
 
 - **Documentation:** OSAC-6758; **manager implementation:** OSAC-6761; **parent:** OSAC-6757 under OSAC-5928.
 - **Source:** PR #357 manager contract §§4.3–4.10, Unified/VMaaS designs, this directory's revised PRD/design, and the user-requested PR #1971 RT amendment proposed for shared review.
-- **Active cases:** 32. **Retired historical IDs:** 4. Active IC coverage: IC-1 through IC-6.
+- **Active cases:** 35. **Retired historical IDs:** 4. Active IC coverage: IC-1 through IC-6.
 - **Execution status:** Planned; this document records no executed checks, CI success, packet capture or real-Fabric result.
 - **Ownership:** DEV owns Unit, Contract and component integration; QE owns deployed cross-component journeys. Shared-core and installer cases stay in their owning work under OSAC-6766/6769.
 
@@ -36,11 +36,35 @@ No dedicated CUDN component target or generic conformance command is claimed to 
 | Baseline and SecurityGroup enforcement/update | TC-POLICY-01 through TC-POLICY-05 | IC-5, IC-6 |
 | Physical-port SecurityGroup enforcement | Shared contract TC-SG-02 and TC-BM-01 | Fabric enforcement is required with BMaaS/CaaS; Kubernetes VM policy cannot substitute |
 | Stale SecurityGroup status feedback and update serialization | Shared Unified contract TC-SG-UPDATE-STATUS-01 | Status must match the new input before success; another Update stays rejected while Updating |
+| Existing VN/Subnet APIs, identities and allocations; fresh-install-only activation | TC-COMPAT-01, TC-COMPAT-02, TC-COMPAT-03; deployed retry in TC-PAIR-01 | IC-1, IC-2, IC-3, IC-4, IC-6 |
 | First-boot preparation and stable VM addresses | TC-ATTACH-01, TC-ATTACH-02 | IC-6 |
 | Retry, cancellation, owned cleanup and diagnostics | TC-RETRY-01, TC-ATTACH-03, TC-DELETE-01, TC-DELETE-02, TC-R8-01 | IC-2, IC-4, IC-6 |
 | Provider backend cleanup after a killed task and late write | Shared contract TC-DELETE-02; CUDN hub-object races TC-R5-07 | Inspect provider backend state after releasing a held write after delete success |
 
 ## Test Cases
+
+### Existing VirtualNetwork and Subnet Compatibility
+
+#### TC-COMPAT-01: Preserve the VirtualNetwork and Subnet API contract
+
+- **Tier / owner:** Core component integration / owning DEV OSAC-6766. **IC:** IC-2, IC-3. **Boundary:** real fulfillment API/persistence and CR projection; manager completion is an explicit fixture, with no Fabric packet path.
+- **Preconditions:** Existing PR #357 VN/Subnet client fixtures, tenant defaults and saved IDs/specs/parent references, recorded managers, IPAM and accepted segments.
+- **Steps:** Run the unchanged Create/Get/List client fixtures with explicit references and tenant-default resolution. For existing fixtures under the amended lifecycle, compare immutable state before and after namespace/group preparation and reconciliation. Exercise Delete on a separate unreferenced fixture and rejection on a referenced fixture.
+- **Expected:** Existing requests need no new namespace/policy field or tenant Update. IDs, names, tenant/parent references, immutable specs, manager identities, CIDRs, gateway, pools and VNIs are retained; internal progress does not allocate again or replace records/CRs. Existing readiness and dependency guards still apply to create/delete.
+
+#### TC-COMPAT-02: Reuse compatible network objects on supported retries
+
+- **Tier / owner:** Component integration / DEV OSAC-6761 with core lifecycle DEV. **IC:** IC-2, IC-3, IC-4, IC-6. **Boundary:** real Kind objects and independent Ansible invocations; OVN/Fabric traffic is omitted.
+- **Preconditions:** A compatible recorded VN/owner-Subnet realization from fresh activation of the amended lifecycle, namespace and CUDN, sibling Subnet, group policy and attachment fixtures; snapshot all names, UIDs, owner identities, selectors, accepted segment and IPAM.
+- **Steps:** Retry VN/Subnet create and group/binding preparation, inject a response loss/conflict, then restart and reconcile from persisted state.
+- **Expected:** Namespace and CUDN retain names and UIDs; VN/Subnet specs, owner, recorded pools/VNIs and attachment namespace remain identical. No second namespace/network, deletion/recreation, reallocation, sibling takeover or VM operation occurs. Policy tasks change only their owned policy/binding state according to selected rules.
+
+#### TC-COMPAT-03: Refuse live legacy activation before mutation
+
+- **Tier / owner:** Core/installer component integration / owning DEV OSAC-6766/6769 with manager DEV. **IC:** IC-1, IC-2, IC-3, IC-4, IC-6. **Boundary:** real activation preflight and Kubernetes inventory; legacy CUDN/VM objects are explicit fixtures and do not prove packet continuity.
+- **Preconditions:** Live legacy VN/Subnet records, a Subnet-named namespace, VN-named CUDN, existing selectors/ownership/RTs/IPAM and workload fixtures; capture configuration, API state and object UIDs/specs. Include an RT mismatch and ambiguous legacy ownership.
+- **Steps:** Attempt to activate the proposed namespace/policy lifecycle over that inventory.
+- **Expected:** Preflight rejects activation with the unsupported legacy-state reason before changing configuration, resetting readiness or dispatching provisioning/cleanup. Records, CRs, UIDs, allocations, selectors, RTs and workload placement remain identical. No `ce-<VN UUID>` replacement namespace, ownership transfer, baseline-deny policy or network deletion is issued. This is rejection coverage, not an in-place migration claim.
 
 ### Installation and Typed Handoff
 
@@ -261,8 +285,8 @@ Current implementation gap: the manager's SecurityGroup and policy-binding work 
 
 - **Tier / owner:** E2E / QE with Fabric and OVN integration owners. **IC:** IC-1, IC-3, IC-5, IC-6. **Boundary:** complete deployed path and real Netris initially.
 - **Preconditions:** Q1–Q5 closure, approved shared RT amendment, qualifying hub/Fabric infrastructure, applicable service profiles and actual common-runner entrypoint when supplied by core.
-- **Steps:** Execute applicable VM/task profiles and the referenced traffic/lifecycle cases. Capture actual versions, inputs, gateway/RT/route behavior, commands and each pass/fail/skip. Repeat separately for any additional claimed Fabric pair.
-- **Expected:** Report distinguishes real endpoints from fixtures and required skips from passes. It resolves the provisional Fabric route behavior from evidence. Registration/unit/Kind success is not accepted as proof of an Arista/Cumulus/Netris packet path.
+- **Steps:** Execute applicable VM/task profiles and the referenced traffic/lifecycle cases. With workloads running under the supported amended contract, repeat reconciliation and manager retry/restart; compare VN/Subnet IDs/specs, stored pools/VNIs, namespace/CUDN UIDs, guest addresses and allowed/denied probes before and after. Capture actual versions, inputs, gateway/RT/route behavior, commands and each pass/fail/skip. Repeat separately for any additional claimed Fabric pair.
+- **Expected:** Report distinguishes real endpoints from fixtures and required skips from passes. It resolves the provisional Fabric route behavior from evidence. Supported retry/restart retains resource and backend identities, pools/VNIs, VM placement/addresses and the same allowed/denied probe outcomes without network or workload recreation. Registration/unit/Kind success is not accepted as proof of an Arista/Cumulus/Netris packet path.
 
 #### TC-R4-01: Prove permitted same-Subnet VM-to-physical L2 traffic
 
@@ -304,4 +328,5 @@ Earlier R1–R9 labels were derived test-plan groupings, not a numbered requirem
 3. Shared snapshots, saved IPAM, output validation and VM/installer activation remain OSAC-6766/6768/6769 work. Their cases cannot be satisfied by a standalone manager fixture.
 4. DNS/policy/address-stability evidence requires actual OVN/KubeVirt; claim/delete races require real API concurrency. Fakes and parsing do not establish those guarantees.
 5. Real Netris EVPN interoperability and the common conformance invocation remain unexecuted/unconfirmed here. Additional Fabric pairs, including Arista or Cumulus, require separate reports.
-6. No Jira issue, assignment or completed conformance result is created by this plan. Refresh downstream task/test references after documentation review.
+6. Preservation and legacy-activation refusal in TC-COMPAT-01–03 require core/installer/manager implementation and executed evidence. They retain the fresh-install-only boundary and do not establish legacy adoption support. Deployed retry/address/traffic continuity remains TC-PAIR-01 evidence.
+7. No Jira issue, assignment or completed conformance result is created by this plan. Refresh downstream task/test references after documentation review.

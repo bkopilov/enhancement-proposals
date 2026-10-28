@@ -16,6 +16,7 @@ OSAC has an EVPN manager that creates and deletes an overlay network using Fabri
 ## In Scope
 
 - VMaaS networking on the single provider-owned networking hub, in connected IPv4 deployments, through the release's supported EVPN path.
+- Preserve the existing VirtualNetwork/Subnet APIs, immutable specifications, IDs, parent references and recorded network allocations. The namespace/policy additions do not require tenants to replace or edit those resources. Existing live legacy networks remain untouched; activation retains PR #357's fresh-install-only boundary. [User: 2026-10-28]
 - Fabric interoperability using the selected compatible Fabric Manager, with automatic segment coordination and disjoint VM, physical-host and guest-ingress address allocations. The host compatibility fix applies to this manager with every selected Fabric; administrators must verify matching route exchange for that pair. Real Netris interoperability is the initial required lab validation; other pairs need their own evidence.
 - One VM-capable Subnet per VirtualNetwork under the current manager limit. Other Subnets remain available for physical workloads; VM attachment on one of those Subnets reports the limitation explicitly. Adding a Subnet does not invalidate the existing owner's VM network.
 - Workload addresses, gateway and agreed DNS resolvers supplied through DHCP. A VM keeps its address across restart and live migration. The Fabric supplies routing to physical workloads and other Subnets in the same VirtualNetwork.
@@ -39,6 +40,8 @@ OSAC has an EVPN manager that creates and deletes an overlay network using Fabri
 - As a Cloud Infrastructure Admin, I want diagnostics that distinguish a missing prerequisite, a manager limitation and a connectivity failure so that the correct configuration or provider component can be repaired.
 
 ### Tenant Admin / Tenant User
+
+- As a Tenant Admin or Tenant User, I want VirtualNetwork and Subnet references, CIDRs, gateways and recorded segment identities to survive supported retries without resource recreation or address changes so that existing workloads keep their network placement. [User: 2026-10-28]
 
 - As a Tenant Admin or Tenant User, I want a VM on a supported Subnet to communicate with permitted physical workloads using the normal OSAC networking resources so that applications can span virtual and physical infrastructure.
 - As a Tenant Admin or Tenant User, I want VM and physical addresses to be allocated without collisions so that both can share the Subnet reliably.
@@ -74,4 +77,4 @@ Final: revise @ prd 0.11.5 - 1c6e8de, workspace codex/osac-6761-cudn-evpn-contra
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"1c6e8de","source_repo":"a6aa33f0b","source_repo_branch":"codex/osac-6761-cudn-evpn-contract","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"1c6e8de","source_repo":"a6aa33f0b","source_repo_branch":"codex/osac-6761-cudn-evpn-contract","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->
