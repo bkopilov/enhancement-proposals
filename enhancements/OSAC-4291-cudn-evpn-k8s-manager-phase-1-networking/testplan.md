@@ -34,8 +34,11 @@ No dedicated CUDN component target or generic conformance command is claimed to 
 | Disjoint DHCP allocation, gateway and agreed DNS | TC-IPAM-01, TC-R6-01, TC-R4-02, TC-SETTINGS-01 | IC-3 |
 | Permitted VM/physical L2 and routed same-VN connectivity | TC-R4-01, TC-R4-02, TC-PAIR-01 | IC-3, IC-6 |
 | Baseline and SecurityGroup enforcement/update | TC-POLICY-01 through TC-POLICY-05 | IC-5, IC-6 |
+| Physical-port SecurityGroup enforcement | Shared contract TC-SG-02 and TC-BM-01 | Fabric enforcement is required with BMaaS/CaaS; Kubernetes VM policy cannot substitute |
+| Stale SecurityGroup status feedback and update serialization | Shared Unified contract TC-SG-UPDATE-STATUS-01 | Status must match the new input before success; another Update stays rejected while Updating |
 | First-boot preparation and stable VM addresses | TC-ATTACH-01, TC-ATTACH-02 | IC-6 |
 | Retry, cancellation, owned cleanup and diagnostics | TC-RETRY-01, TC-ATTACH-03, TC-DELETE-01, TC-DELETE-02, TC-R8-01 | IC-2, IC-4, IC-6 |
+| Provider backend cleanup after a killed task and late write | Shared contract TC-DELETE-02; CUDN hub-object races TC-R5-07 | Inspect provider backend state after releasing a held write after delete success |
 
 ## Test Cases
 
@@ -152,7 +155,7 @@ No dedicated CUDN component target or generic conformance command is claimed to 
 
 #### TC-R5-07: Exercise owner termination and late create/delete writes
 
-- **Tier / owner:** Component integration / DEV OSAC-6761 with core lifecycle DEV. **IC:** IC-4. **Boundary:** real API conflicts and independently paused Ansible/backend operations; no packet path.
+- **Tier / owner:** Component integration / DEV OSAC-6761 with core lifecycle DEV. **IC:** IC-4. **Boundary:** real API conflicts and independently paused Ansible/backend operations for Kubernetes Manager-owned hub objects; no packet path. The provider Fabric backend is covered separately by shared contract [TC-DELETE-02](/enhancements/OSAC-1433-network-manager-integration-contract-networking/testplan.md#tc-delete-02).
 - **Preconditions:** Reviewed Q3 ownership/delete-wins mechanism and controllable barriers at claim/create/delete writes.
 - **Steps:** Start another create while owner CR is terminating; finish owner cleanup and retry. Separately cancel a create, complete its delete, then release its delayed write. Repeat the late-write trace for Namespace, CUDN and NetworkPolicy. Race cleanup from an old API ID with a new claim.
 - **Expected:** A terminating owner is treated as present and produces a retryable claim failure. Retry after release can claim safely. Late writes after successful delete leave no state for the deleted ID. Old cleanup never removes the new owner's objects. A separate tombstone preflight read or journal without an enforced mutation fence fails this case. No manager Lease is required.
@@ -187,7 +190,7 @@ Current implementation gap: the manager's SecurityGroup and policy-binding work 
 - **Tier / owner:** E2E / QE. **IC:** IC-5, IC-6. **Boundary:** real VM/Fabric traffic and policy engine.
 - **Preconditions:** Two groups with distinct ingress/egress allows, multiple bound VMs and an unbound control pod; known last-successful rules.
 - **Steps:** Probe allowed/denied TCP/UDP/all cases and stateful replies, replace a group's rules, probe each bound target in the shared namespace, and exercise the permanent unsupported-ICMP path.
-- **Expected:** Each VM receives exactly its selected union in both directions, follows the successful update without reattachment, and permits stateful replies. Empty directions allow no application traffic through that policy contribution. Unbound/control traffic remains protected. Unsupported ICMP is a visible failed group, not an unfiltered success.
+- **Expected:** Each VM receives exactly its selected union in both directions, follows the successful update without reattachment, and permits stateful replies. Empty directions allow no application traffic through that policy contribution. Unbound/control traffic remains protected. Unsupported ICMP is a visible failed group, not an unfiltered success. This case proves VM-pod enforcement only; physical-port enforcement is separately required by shared contract TC-BM-01, and a Fabric no-op is nonconformant whenever BMaaS or CaaS is enabled.
 
 #### TC-POLICY-05: Converge a bind racing a rule replacement
 

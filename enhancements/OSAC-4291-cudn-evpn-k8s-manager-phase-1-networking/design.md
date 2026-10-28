@@ -3,7 +3,7 @@ title: cudn-evpn-k8s-manager-phase-1-networking
 authors:
   - Benny Kopilov
 creation-date: 2026-09-03
-last-updated: 2026-10-25
+last-updated: 2026-10-28
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-4291
   - https://redhat.atlassian.net/browse/OSAC-6757
@@ -58,7 +58,7 @@ The [manager integration contract](/enhancements/OSAC-1433-network-manager-integ
 
 ## Proposal
 
-`cudn_evpn` is an OSAC-shipped Ansible role with network type `evpn`. The Fabric Manager owns physical networking, its IP-VRF/MAC-VRF, the anycast gateway and physical DHCP. The Kubernetes Manager owns the hub overlay network, overlay DHCP, VM pod policy, and its namespaces/bindings. The release supports one provider-owned networking hub; tasks reach it through the job service account.
+`cudn_evpn` is an OSAC-shipped Ansible role with network type `evpn`. The Fabric Manager owns physical networking, its IP-VRF/MAC-VRF, the anycast gateway, physical DHCP and SecurityGroup enforcement on physical ports whenever BMaaS or CaaS is enabled. The Kubernetes Manager owns the hub overlay network, overlay DHCP, VM pod policy, and its namespaces/bindings. Its NetworkPolicy protects VM pods and does not replace Fabric enforcement for physical hosts. A physical apply cannot no-op or move the port without an effective SecurityGroup binding; an unsupported rule must fail permanently under the shared contract. The release supports one provider-owned networking hub; tasks reach it through the job service account.
 
 Core records manager identities, immutable address layouts and accepted typed segments, orders the tasks and validates their outputs. Shared adoption is tracked by [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766). Manager code is [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761); Fabric realization is [Agentless OSAC-6755](https://redhat.atlassian.net/browse/OSAC-6755) and [Netris OSAC-6756](https://redhat.atlassian.net/browse/OSAC-6756). The current release's manager/type compatibility requirements apply to every pair.
 

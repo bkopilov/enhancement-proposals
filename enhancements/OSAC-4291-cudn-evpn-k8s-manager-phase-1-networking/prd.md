@@ -5,13 +5,13 @@
 | Author(s) | Benny Kopilov |
 | Jira | [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) |
 | Alignment work | [OSAC-6758](https://redhat.atlassian.net/browse/OSAC-6758), under [OSAC-6757](https://redhat.atlassian.net/browse/OSAC-6757) |
-| Date | 2026-10-25 |
+| Date | 2026-10-28 |
 
 This revision follows the approved [networking contract in PR #357](https://github.com/osac-project/enhancement-proposals/pull/357) and its Unified Networking and VMaaS requirements, with the user-requested route-target compatibility amendment from [osac PR #1971](https://github.com/osac-project/osac/pull/1971) and the shared namespace lifecycle proposed for shared-contract review. Technical decisions and superseded clarifications are recorded in [clarifications](clarifications.md); implementation and evidence are described in the [design](design.md). These proposals do not change PR #357's approval status.
 
 ## Problem Statement
 
-OSAC has an EVPN manager that creates and deletes an overlay network using Fabric-provided segment identifiers. The current manager does not implement VM SecurityGroup enforcement or the required policy binding before VM creation. Tenants need VMs and physical hosts to share an isolated network with consistent address allocation, DNS and security policy. Administrators need the existing manager to follow the approved networking contract so it can interoperate with a conforming Fabric Manager. Until that implementation and its lab validation are complete, a successfully created network alone does not establish workload connectivity or isolation.
+OSAC has an EVPN manager that creates and deletes an overlay network using Fabric-provided segment identifiers. The current manager does not implement VM SecurityGroup enforcement or the required policy binding before VM creation. Tenants need VMs and physical hosts to share an isolated network with consistent address allocation, DNS and security policy. The Kubernetes Manager's policy protects VM pods; the selected Fabric Manager must enforce SecurityGroups on physical ports whenever BMaaS or CaaS is enabled. Kubernetes policy does not satisfy that physical enforcement requirement, and a physical attachment cannot become Ready after a no-op. Administrators need the existing manager to follow the approved networking contract so it can interoperate with a conforming Fabric Manager. Until that implementation and its lab validation are complete, a successfully created network alone does not establish workload connectivity or isolation.
 
 ## In Scope
 
@@ -19,7 +19,7 @@ OSAC has an EVPN manager that creates and deletes an overlay network using Fabri
 - Fabric interoperability using the selected compatible Fabric Manager, with automatic segment coordination and disjoint VM, physical-host and guest-ingress address allocations. The host compatibility fix applies to this manager with every selected Fabric; administrators must verify matching route exchange for that pair. Real Netris interoperability is the initial required lab validation; other pairs need their own evidence.
 - One VM-capable Subnet per VirtualNetwork under the current manager limit. Other Subnets remain available for physical workloads; VM attachment on one of those Subnets reports the limitation explicitly. Adding a Subnet does not invalidate the existing owner's VM network.
 - Workload addresses, gateway and agreed DNS resolvers supplied through DHCP. A VM keeps its address across restart and live migration. The Fabric supplies routing to physical workloads and other Subnets in the same VirtualNetwork.
-- SecurityGroup enforcement before a VM first uses its tenant network, baseline protection for unbound workloads, consistent rule updates, deterministic retries and cleanup of owned resources.
+- VM SecurityGroup enforcement before a VM first uses its tenant network, baseline protection for unbound workloads, consistent rule updates, deterministic retries and cleanup of owned resources. The Kubernetes Manager's policy applies to VM pods; physical-port SecurityGroup enforcement remains the Fabric Manager's responsibility under the shared contract.
 - SecurityGroups can be prepared before any Subnet exists and remain available while their VirtualNetwork exists, including after its VM-capable Subnet is removed. Removing one VM or Subnet preserves other live groups and workloads. [User]
 - Administrator installation and diagnostic guidance, actionable prerequisite and unsupported-path errors, and evidence that distinguishes implementation checks from real connectivity and policy validation.
 

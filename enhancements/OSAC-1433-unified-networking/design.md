@@ -3,7 +3,7 @@ title: unified-networking
 authors:
   - dmanor@redhat.com
 creation-date: 2026-06-03
-last-updated: 2026-10-22
+last-updated: 2026-10-28
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-1433
 prd: "prd.md"
@@ -448,9 +448,12 @@ enum Protocol {
 **Rule updates.** A [rule update](#api-operation-constraint) stores the new rules and, in the same transaction, updates the record's status ([Status](#status)), so the tenant sees the update at once: a READY group stays READY with the message `Updating`, and a FAILED group becomes PENDING.
 1. The fulfillment controller copies the rules to the SecurityGroup CR.
 2. The OSAC operator stores them in `status.taskInput` as the next attempt's input ([contract §4.5](/enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md#45-task-input)) and sets the CR's reason to `Updating` (a FAILED group: `Ready=False`, reason `Progressing`).
-3. It runs `create_security_group` again on each recorded manager, in manager order (Fabric, then Kubernetes), as the next attempt ([contract §4.7](/enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md#47-ordering-concurrency-retries-and-ownership)).
-4. Each manager replaces its object's rules atomically; on failure, the object keeps its previous rules. NetworkAttachments are not touched; bound interfaces follow the object.
-5. Once the run of each recorded manager with the new rules has succeeded, the reason returns to `Succeeded`.
+3. The fulfillment controller accepts status feedback only when the CR's `status.taskInput` exactly matches the rules stored on the API record for this update. Feedback from an older input, including `Ready=True` with reason `Succeeded`, is ignored. This check uses persisted record/CR state after controller restarts as well as during normal reconciliation.
+4. It runs `create_security_group` again on each recorded manager, in manager order (Fabric, then Kubernetes), as the next attempt ([contract §4.7](/enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md#47-ordering-concurrency-retries-and-ownership)).
+5. Each manager replaces its object's rules atomically; on failure, the object keeps its previous rules. NetworkAttachments are not touched; bound interfaces follow the object.
+6. Once the run of each recorded manager with the new rules has succeeded, the reason returns to `Succeeded`.
+
+The stale-feedback barrier and rejection of a second Update while the first is in progress are release-gated by [TC-SG-UPDATE-STATUS-01](/enhancements/OSAC-1433-network-manager-integration-contract-networking/testplan.md#tc-sg-update-status-01-ignore-stale-success-feedback-during-a-rule-update).
 
 - A final failure sets `Ready=False`, reason `Failed` (FAILED), with the manager's message. Each manager's object keeps the rules of its last successful run, and bound workloads keep running. New workloads cannot select the group ([gate](#creation-readiness-gates)). The tenant fixes the rules with another Update or deletes the group once no workload uses it.
 - An Update is accepted only while the SecurityGroup is READY with no update in progress, or FAILED. Otherwise (PENDING, or READY with the message `Updating`) it fails with `FAILED_PRECONDITION` and the message "SecurityGroup <id> is being created or updated; retry when it is READY or FAILED", so no job of the group runs when an Update is stored.
@@ -563,7 +566,7 @@ The workload service creates one NetworkAttachment CR per workload from the work
   2. Fabric `apply_network_attachment`, after VMaaS has discovered the VM's address, which stays the same across restarts and live migration: the networking controller adds the address to the task input, and the Fabric Manager binds it to the groups' policy objects in the fabric. This overlay bind may be a documented no-op in every deployment, because the Kubernetes Manager always enforces VM SecurityGroups.
 
   The NetworkAttachment is Ready once both applies succeeded; the VM is network-ready only then ([VMaaS design](/enhancements/OSAC-1435-vmaas-networking/design.md)). The deletes run after the VM is gone: Fabric, then Kubernetes.
-- **Bare-metal server (physical interface): the Fabric Manager only**, because the Kubernetes Manager has no enforcement point on a physical port. With a Fabric Manager whose design documents its SecurityGroup tasks as no-ops, bare-metal traffic is not filtered. The NetworkAttachment is Ready once the Fabric apply succeeded.
+- **Bare-metal server (physical interface): the Fabric Manager only**, because the Kubernetes Manager has no enforcement point on a physical port. With BMaaS or CaaS enabled, the Fabric Manager must enforce the selected SecurityGroups before moving the port; a documented no-op fails the attachment and it remains not Ready. The Fabric contract and conformance profile require a blocked-port check.
 
 ```yaml
 apiVersion: osac.openshift.io/v1alpha1
@@ -815,7 +818,6 @@ How the fulfillment service keeps the [Concurrent requests](#concurrent-requests
 
 | Case | Why it matters | Proposed handling |
 |---|---|---|
-| The record maps `Ready` from the CR before the CR holds the new rules. | The tenant would see `Succeeded` from the older run. | The fulfillment controller maps no `Ready` to the record until the CR's `status.taskInput` holds the stored rules. The operator stores the input and sets reason `Updating` in one status write. |
 | A NetworkAttachment binds an interface while a rule update runs. | The interface could end with the older rules. | Manager behavior: [contract — Updates while a job runs](/enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md#updates-while-a-job-runs). |
 
 ### Automatic external access races
