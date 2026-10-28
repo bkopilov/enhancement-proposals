@@ -10,7 +10,7 @@
 
 ## Fixtures and Entry Points
 
-Common saved fixture: tenant-a, VN vn-a (11111111-1111-4111-8111-111111111111), owner Subnet subnet-a (22222222-2222-4222-8222-222222222222), group web (33333333-3333-4333-8333-333333333333), L2=10100, parent L3=20001. IPAM is the design's 192.0.2.0/24 example; use fresh IDs for independent cases and retain separate live controls for deletion. Each test supplies the exact eight-task envelope defined in the design, captures osac_result/osac_error and the API mutation trace, and snapshots existing objects before mutations. Malformed data tests change one field at a time. Unsupported inputs expect retryable:false; missing prerequisites/conflicts expect retryable:true; tasks without a typed result emit no osac_result. No secrets appear in artifacts.
+Common saved fixture: tenant-a, VN vn-a (11111111-1111-4111-8111-111111111111), owner Subnet subnet-a (22222222-2222-4222-8222-222222222222), group web (33333333-3333-4333-8333-333333333333), L2=10100, parent L3=20001. IPAM is the design's 192.0.2.0/24 example; use fresh IDs for independent cases and retain separate live controls for deletion. Task-execution cases supply the applicable task envelope from the eight-task interface, capture that task's osac_result/osac_error and API mutation trace, and snapshot existing objects before mutations. E2E cases drive normal OSAC API/workload flows and collect resource/job status, guest DHCP/address data, route observations and permitted/denied packet results; they do not directly invoke every task. Manual documentation cases retain reviewed document/source references and finding notes, with no required task envelope, job artifacts or mutation trace. Malformed data tests change one field at a time. Unsupported inputs expect retryable:false; missing prerequisites/conflicts expect retryable:true; tasks without a typed result emit no osac_result. No secrets appear in artifacts.
 
 | Tier / owner | Existing pattern and planned entry point | Real / faked boundary |
 |---|---|---|
@@ -55,6 +55,8 @@ Jira inventory could not be queried because the Jira CLI is unavailable. These a
 
 ## Test Cases
 
+### Planned Manager Cases
+
 #### TC-COMPAT-01: Preserve the VirtualNetwork and Subnet API contract
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
@@ -69,7 +71,7 @@ Jira inventory could not be queried because the Jira CLI is unavailable. These a
 | Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
 | Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
@@ -101,7 +103,7 @@ Existing requests need no new namespace/policy field or tenant Update. IDs, name
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -131,7 +133,7 @@ Namespace and CUDN retain names and UIDs; VN/Subnet specs, owner, recorded pools
 | Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
 | Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
@@ -161,7 +163,7 @@ Preflight rejects activation with the unsupported legacy-state reason before cha
 | Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
 | Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
@@ -192,7 +194,7 @@ Valid selection records the OSAC role/type. Invalid selection fails with an acti
 | Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
 | Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
@@ -225,7 +227,7 @@ VN L3 acceptance precedes Subnet dispatch. Both Subnet tasks receive integer 200
 | Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
 | Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
@@ -257,7 +259,7 @@ Malformed/out-of-range/colliding/changed outputs are rejected before Kubernetes 
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -288,7 +290,7 @@ All required files exist. No-output success publishes no `osac_result`; apply pu
 | Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
 | Working directory | osac/osac-aap |
 | Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
 | Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
@@ -305,36 +307,38 @@ Valid input controls and a write-recording backend fixture containing deliberate
 
 Invalid inputs fail before writes. Reported errors contain only nonempty message and boolean retryable, with the expected classification; the play fails. No raw failed-result/invocation, token or secret value is emitted.
 
-#### TC-SETTINGS-01: Make missing prerequisites recoverable
+#### TC-SETTINGS-01: Validate installation defaults and recover missing prerequisites
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: VN L3/Subnet L2 typed handoff | high | automated | IC-1, IC-2, IC-3 |
+| [OSAC-6769](https://redhat.atlassian.net/browse/OSAC-6769) with [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcomes: Installation and diagnostics; explicit unsupported ICMP | high | automated | IC-1, IC-2, IC-3 |
 
-- **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-1, IC-2, IC-3. **Boundary:** real Kind objects and Ansible environment lookup; prerequisite objects are schema fixtures, not live FRR/OVN.
+- **Tier / owner:** Core/installer and manager component integration / DEV OSAC-6769 with OSAC-6761. **IC:** IC-1, IC-2, IC-3. **Boundary:** real activation-preflight API/configuration and Kind/Ansible lookup; prerequisite objects/controller status are fixtures, not live FRR/OVN.
 
 
 | Execution evidence | Planned value |
 |---|---|
-| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Command / verification | Extend verified `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment` for activation-preflight/default validation. Missing-manager-setting checks use the proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`, registered in `make -C osac-aap test` |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
-| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
-| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Environment prerequisites | Prepared Kind, fulfillment activation-preflight API/config fixtures and a zero-dispatch recorder for the unsupported default; plus K8S_AUTH_KUBECONFIG, the CUDN schema fixture and Ansible environment for missing-setting role checks |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: activation-preflight configuration/API, Kind objects and independent Ansible processes; faked: dispatch recorder, prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packets |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
-Owner-capable Subnet input and a reviewed prerequisite discovery mechanism from installation.
+Owner-capable Subnet input and the selected installer prerequisite profile. Prepare a fresh activation with otherwise valid defaults and an explicit default ingress rule `{protocol: PROTOCOL_ICMP, ipv4Cidr: 0.0.0.0/0}`. Snapshot configuration/readiness and record provisioning, cleanup and tenant-onboarding dispatches; initially no tenant network exists.
 
 ##### Steps
 
 1. Omit or malform DNS resolver setting, then omit installed VTEP/required FRR/hub prerequisite.
 2. Repair one prerequisite at a time and repeat the same input.
+3. With prerequisites valid, submit the activation fixture containing the explicit ICMP default rule. Inspect the activation error, retained configuration/readiness and all dispatch/mutation records.
+4. Replace that default with a supported TCP/UDP rule and retry normal activation before allowing tenant onboarding.
 
 ##### Expected Results
 
-Each missing/malformed setting/prerequisite fails retryably and names the item without a success artifact. Repair permits convergence without duplicate state. No task silently installs peering or substitutes a default resolver.
+Each missing/malformed setting/prerequisite fails retryably and names the item without a success artifact. Repair permits convergence without duplicate state. No task silently installs peering or substitutes a default resolver. An explicit ICMP default blocks activation before tenant onboarding, with the same permanent `cudn_evpn does not support explicit ICMP SecurityGroup rules` diagnostic. No provisioning or cleanup mutation/dispatch occurs and the prior configuration/readiness is unchanged. Supported corrected defaults pass that validation without weakening policy.
 
 #### TC-R3-01: Realize the exact primary EVPN network
 
@@ -350,7 +354,7 @@ Each missing/malformed setting/prerequisite fails retryably and names the item w
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -382,7 +386,7 @@ Exact `evpn: "true"`, VN/tenant ownership and namespace selector are present. La
 | Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
 | Working directory | osac/osac-aap |
 | Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
 | Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
@@ -414,7 +418,7 @@ Every render contains MAC-VRF 0:<l2_vni> and IP-VRF 0:<l3_vni>. No hub-AS deriva
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -446,7 +450,7 @@ The matching pair exchanges the required tenant routes and forwards permitted tr
 | Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
 | Working directory | osac/osac-aap |
 | Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
 | Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
@@ -478,7 +482,7 @@ Example infrastructure=[192.0.2.1/32,192.0.2.2/32], reserved=[192.0.2.128/25], w
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -511,7 +515,7 @@ Address belongs to the saved overlay pool and excludes reserved infrastructure; 
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -542,7 +546,7 @@ The first successful claim records that Subnet's API ID, independent of timestam
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -572,7 +576,7 @@ Sibling Subnet tasks succeed without creating a second network; overlay apply fa
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -603,7 +607,7 @@ Owner network/baseline are removed before claim release; the VN-owned namespace 
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed; issued-POST/delete/restart branches BLOCKED until the strict backend proof is reviewed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed; issued-POST/delete/restart branches BLOCKED until the strict backend proof is reviewed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -614,10 +618,10 @@ Reviewed deletion ownership/delete-wins mechanism; controls that pause/release e
 ##### Steps
 
 1. Start another create while the owner CR is terminating; finish owner cleanup and retry the claim.
-  2. Separately pause an already-issued create mutation before commit, cancel its job and start matching deletion with the stored input.
-  3. Observe deletion reaching cleanup, waiting for the outstanding operation, or succeeding; then release the exact mutation without waiting for deletion to succeed first.
-  4. Await operation settlement and successful cleanup within the configured deadline. Repeat the trace for Namespace, CUDN and NetworkPolicy.
-  5. Inspect owned objects and mutation history before a repeated delete or corrective cleanup. Verify the live control is unchanged, then require repeated deletion to succeed. Separately race cleanup from an old API ID with a new claim and verify the new owner's objects survive.
+2. Separately pause an already-issued create mutation before commit, cancel its job and start matching deletion with the stored input.
+3. Observe deletion reaching cleanup, waiting for the outstanding operation, or succeeding; then release the exact mutation without waiting for deletion to succeed first.
+4. Await operation settlement and successful cleanup within the configured deadline. Repeat the trace for Namespace, CUDN and NetworkPolicy.
+5. Inspect owned objects and mutation history before a repeated delete or corrective cleanup. Verify the live control is unchanged, then require repeated deletion to succeed. Separately race cleanup from an old API ID with a new claim and verify the new owner's objects survive.
 
 ##### Expected Results
 
@@ -637,7 +641,7 @@ A terminating owner is treated as present and produces a retryable claim failure
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -669,7 +673,7 @@ Initial group creation needs no network and selects no VM. One VN-owned namespac
 | Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
 | Working directory | osac/osac-aap |
 | Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
 | Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
@@ -681,11 +685,11 @@ Last-successful group rules and exact TCP/UDP/all-protocol inputs, empty directi
 
 1. Render both policy directions, port boundaries/ranges and remote CIDRs.
 2. Attempt malformed/unsupported rules and inject replacement failure.
-3. Exercise the selected ICMP implementation or permanent rejection path.
+3. Submit an explicit `icmp` rule without ports and require `osac_error.retryable: false` with `cudn_evpn does not support explicit ICMP SecurityGroup rules` before any backend mutation. Compare the saved policy and membership with their pre-request values; no successful ICMP implementation path is allowed.
 
 ##### Expected Results
 
-Every NetworkPolicy includes Ingress and Egress, even with no rules in one direction. Rules retain exact allowed traffic semantics. Unsupported ICMP is never silently dropped; rejection is permanent before mutation. A failed replacement retains the object's previous rules.
+Every NetworkPolicy includes Ingress and Egress, even with no rules in one direction. Rules retain exact allowed traffic semantics. Explicit ICMP is rejected permanently before mutation, never implemented or silently dropped. A definitively rejected replacement retains the previous rules and membership; a lost/unknown response is reconciled without asserting rollback or success.
 
 #### TC-POLICY-03: Deny unbound traffic while preserving DHCP/ARP
 
@@ -701,7 +705,7 @@ Every NetworkPolicy includes Ingress and Egress, even with no rules in one direc
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -732,7 +736,7 @@ Application traffic is blocked both ways before any binding. Owning DHCP and per
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -762,7 +766,7 @@ Each VM receives exactly its selected union in both directions, follows the succ
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -797,7 +801,7 @@ Only UID/RV-tested application/json-patch+json is used. Conflicts are retryable 
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -829,7 +833,7 @@ Apply succeeds before VM creation and returns only vm_attachment.namespace, equa
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -860,7 +864,7 @@ The same address is retained within the recorded overlay pool; Fabric traffic co
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -891,7 +895,7 @@ Only the target's owned binding/artifacts disappear; the other binding, shared n
 | Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
 | Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
 | Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
-| Execution status | Not run; planned case/extension, no passing evidence claimed; issued-POST/delete/restart branches BLOCKED until the strict backend proof is reviewed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed; issued-POST/delete/restart branches BLOCKED until the strict backend proof is reviewed |
 | Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
 | Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
@@ -929,7 +933,7 @@ Retries converge with the same identities/output, without duplicates or changed 
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -961,7 +965,7 @@ Manager tasks never delete the VM. Finalizers retain ownership until cleanup suc
 | Command / verification | Manual document/source review; no executable command |
 | Working directory | enhancement-proposals (documentation repository) |
 | Environment prerequisites | Current manager/contract documents and the source/evidence specified in this case; no cluster execution |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: source documents and examples; faked: none; omitted: every runtime API, workload and packet path |
 | Existing source pattern | design.md Support Procedures, Installation and RBAC sections; existing source task/manifest examples |
 
@@ -991,7 +995,7 @@ Guidance distinguishes a remnant from a live owned network. Routine delete never
 | Command / verification | Manual document/source review; no executable command |
 | Working directory | enhancement-proposals (documentation repository) |
 | Environment prerequisites | Current manager/contract documents and the source/evidence specified in this case; no cluster execution |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: source documents and examples; faked: none; omitted: every runtime API, workload and packet path |
 | Existing source pattern | design.md Support Procedures, Installation and RBAC sections; existing source task/manifest examples |
 
@@ -1022,7 +1026,7 @@ Guidance states that OVN serves the VM gateway, both VRFs use explicit 0:VNI RTs
 | Command / verification | Manual document/source review; no executable command |
 | Working directory | enhancement-proposals (documentation repository) |
 | Environment prerequisites | Current manager/contract documents and the source/evidence specified in this case; no cluster execution |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: source documents and examples; faked: none; omitted: every runtime API, workload and packet path |
 | Existing source pattern | design.md Support Procedures, Installation and RBAC sections; existing source task/manifest examples |
 
@@ -1052,7 +1056,7 @@ Each path identifies the responsible setting/owner and supported repair/lifecycl
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -1085,7 +1089,7 @@ Report distinguishes real endpoints from fixtures and required skips from passes
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -1115,7 +1119,7 @@ Allowed probes and replies succeed, one-sided policy denial blocks application t
 | Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
 | Working directory | osac (mono-repo root) |
 | Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
-| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Execution status | Release acceptance gated on #427; not run; planned case/extension, no passing evidence claimed |
 | Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
 | Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
@@ -1133,6 +1137,8 @@ Same VN/L3 VNI, distinct Subnet/L2 VNIs, a valid owner overlay attachment and a 
 Permitted same-VN routed traffic succeeds; denied/unrelated-VN traffic fails. The Fabric supplies routing without a second CUDN gateway or inter-VRF-peering assumption. Record actual supported route types; do not require type-5 until the lab establishes that behavior.
 
 ## Gaps and Acceptance Gates
+
+- Prerequisite [manager-contract amendment #427](https://github.com/osac-project/enhancement-proposals/pull/427) must be approved and merged before release acceptance of all 34 active cases. It defines the gateway, identifier handoff, RTs, namespace lifetime and installer ownership they rely on. Unit fixtures may be developed/run before approval, but do not waive that contract gate; all activation and supported-pair claims remain blocked until it closes.
 
 - The strict backend create/delete ordering or fencing proof is not selected or demonstrated. TC-R5-07's relevant create/delete/restart branches remain blocked; no timeout, absent GET, preflight tombstone or fake backend can make them pass.
 - Platform versions, installed DNS-Service wiring, primary-network policy, persistent-IP and real Fabric validation must be recorded before activation. A component CRD fixture is not a supported-platform result.
