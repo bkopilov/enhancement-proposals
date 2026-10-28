@@ -17,10 +17,23 @@ Common saved fixture: tenant-a, VN vn-a (11111111-1111-4111-8111-111111111111), 
 | Unit / DEV | osac-aap/tests/unit/test_cudn_evpn_role.py: `_render_cudn`, `_run_role_with_inputs`, test_cudn_template_separates_infrastructure_ips_from_netris_dhcp_range; deletion-order file test_cudn_evpn_delete_order.py. `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py` from osac-aap | Real Python/Jinja/Ansible transformations; APIs and packets omitted |
 | Component integration / DEV | Planned osac-aap/tests/integration/targets/cudn_evpn/tasks/baseline.yml plus separate race plays, following targets/metallb_l2_detach_annotation/tasks/baseline.yml's independent-process API-conflict pattern. Register in run_tests.sh. `make -C osac-aap test` from OSAC root; focused `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml` from the prepared integration directory | Real Ansible and Kind API; installed CUDN schema/prerequisites explicitly fixture-driven, no OVN/FRR/KubeVirt/Fabric packets or deployed AAP |
 | Core/installer integration / DEV | Owning existing suites under OSAC-6766/6769; typed-output and preflight fixtures must capture actual job input/status. Installer host schema/render validation includes planned `make -C osac-installer evpn-render-test` dependency from osac #1993 | Real declared API/render boundary; fake jobs never establish packet behavior |
-| E2E / QE | Planned tests/e2e/vmaas/regression/test_cudn_evpn_networking.py, patterned on sanity/test_virtual_network_lifecycle.py, sanity/test_subnet_lifecycle.py and regression/test_networking_api_contract.py. Existing conftest.py fixtures `grpc`, `k8s_hub_client`, `k8s_virt_client`, `vm_template`; core/helpers.py `wait_for_subnet_ready`, `wait_for_vmi_ip`; core/runner.py `poll_until`. `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` from OSAC root once implemented | Full deployed core/operator/AAP, OVN/FRR/KubeVirt and real selected Fabric. Record all versions and omitted dependencies |
+| E2E / QE | Planned tests/e2e/vmaas/regression/test_cudn_evpn_networking.py, patterned on sanity/test_virtual_network_lifecycle.py, sanity/test_subnet_lifecycle.py and regression/test_networking_api_contract.py. Existing root conftest.py fixtures `grpc`, `k8s_hub_client` and vmaas/conftest.py fixtures `k8s_virt_client`, `vm_template`; core/helpers.py `wait_for_subnet_ready`, `wait_for_vmi_ip`; core/runner.py `poll_until`. `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` from OSAC root once implemented | Full deployed core/operator/AAP, OVN/FRR/KubeVirt and real selected Fabric. Record all versions and omitted dependencies |
 | Documentation / DEV | Review installed-prerequisite and tenant error guidance against the complete design examples | No runtime execution |
 
 The dedicated CUDN target and deployed file are required implementation deliverables, not existing passing tests. An unrelated passing suite cannot satisfy them. The common Fabric conformance runner is separate shared-core work; its existing shared IDs below are always qualified as Shared.
+
+### Execution and Work-Item Evidence
+
+Each case below includes its own command, working directory, environment, execution status and real/faked/omitted dependency record. "Verified entry point" means the command/target and named pattern were inspected in the source, not executed. Proposed CUDN targets/files must be implemented before the command covers this case. Per-case Preconditions add to, rather than replace, the listed environment. Planned automated coverage is never a passing execution result.
+
+| Work | Tracking and mapping state |
+|---|---|
+| Manager DEV | [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761); maps the manager cases below |
+| Core DEV | Owning epic [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766); this plan maps no individual child Task or assignee |
+| Installation DEV | [OSAC-6769](https://redhat.atlassian.net/browse/OSAC-6769); host-render delivery additionally depends on [osac #1993](https://github.com/osac-project/osac/pull/1993) |
+| Deployed QE | No QE ticket is mapped or created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291). A concrete QE Task must be selected during decomposition before execution ownership is accepted |
+
+Jira inventory could not be queried because the Jira CLI is unavailable. These are explicit mapping gaps, not a claim that no suitable issue exists in Jira. No assignee or Jira AC number is fabricated. AC-source cells trace to the named PRD outcome groups; final Task/AC links are required during decomposition.
 
 ## Requirements and Interface Coverage
 
@@ -46,9 +59,19 @@ The dedicated CUDN target and deployed file are required implementation delivera
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6766 (core owning epic; child Task pending) | PRD outcome: VN/Subnet API and state preservation | critical | automated | IC-2, IC-3 |
+| [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) (owning epic; no child Task/assignee mapped in this plan) | PRD outcome: VN/Subnet API and state preservation | critical | automated | IC-2, IC-3 |
 
 - **Tier / owner:** Core component integration / owning DEV OSAC-6766. **IC:** IC-2, IC-3. **Boundary:** real fulfillment API/persistence and CR projection; manager completion is an explicit fixture, with no Fabric packet path.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
+| Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
 ##### Preconditions
 
@@ -68,9 +91,19 @@ Existing requests need no new namespace/policy field or tenant Update. IDs, name
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: VN/Subnet API and state preservation | critical | automated | IC-2, IC-3, IC-4, IC-6 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: VN/Subnet API and state preservation | critical | automated | IC-2, IC-3, IC-4, IC-6 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761 with core lifecycle DEV. **IC:** IC-2, IC-3, IC-4, IC-6. **Boundary:** real Kind objects and independent Ansible invocations; OVN/Fabric traffic is omitted.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -88,9 +121,19 @@ Namespace and CUDN retain names and UIDs; VN/Subnet specs, owner, recorded pools
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6766 (core owning epic; child Task pending) | PRD outcome: Fresh-only activation and legacy refusal | critical | automated | IC-1, IC-2, IC-3, IC-4, IC-6 |
+| [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) (owning epic; no child Task/assignee mapped in this plan) | PRD outcome: Fresh-only activation and legacy refusal | critical | automated | IC-1, IC-2, IC-3, IC-4, IC-6 |
 
 - **Tier / owner:** Core/installer component integration / owning DEV OSAC-6766/6769 with manager DEV. **IC:** IC-1, IC-2, IC-3, IC-4, IC-6. **Boundary:** real activation preflight and Kubernetes inventory; legacy CUDN/VM objects are explicit fixtures and do not prove packet continuity.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
+| Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
 ##### Preconditions
 
@@ -108,9 +151,19 @@ Preflight rejects activation with the unsupported legacy-state reason before cha
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6766 (core owning epic; child Task pending) | PRD outcome: Installation and diagnostics | high | automated | IC-1 |
+| [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) (owning epic; no child Task/assignee mapped in this plan) | PRD outcome: Installation and diagnostics | high | automated | IC-1 |
 
 - **Tier / owner:** Core/installer component integration / owning DEV. **IC:** IC-1. **Boundary:** real registration/controller API with declared installer rendering; no Fabric traffic.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
+| Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
 ##### Preconditions
 
@@ -129,9 +182,19 @@ Valid selection records the OSAC role/type. Invalid selection fails with an acti
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6766 (core owning epic; child Task pending) | PRD outcome: VN L3/Subnet L2 typed handoff | critical | automated | IC-2, IC-3 |
+| [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) (owning epic; no child Task/assignee mapped in this plan) | PRD outcome: VN L3/Subnet L2 typed handoff | critical | automated | IC-2, IC-3 |
 
 - **Tier / owner:** Core component integration / owning DEV. **IC:** IC-2, IC-3. **Boundary:** controller/job and stored status; Fabric/AAP execution may be fixture-driven.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
+| Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
 ##### Preconditions
 
@@ -152,9 +215,19 @@ VN L3 acceptance precedes Subnet dispatch. Both Subnet tasks receive integer 200
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6766 (core owning epic; child Task pending) | PRD outcome: VN L3/Subnet L2 typed handoff | critical | automated | IC-2, IC-3 |
+| [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) (owning epic; no child Task/assignee mapped in this plan) | PRD outcome: VN L3/Subnet L2 typed handoff | critical | automated | IC-2, IC-3 |
 
 - **Tier / owner:** Core contract/integration / owning DEV. **IC:** IC-2, IC-3. **Boundary:** real typed-output/status acceptance; Fabric output is a fixture.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing suite `make -C osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment`; this case needs an added/extended test |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Installed Kind dev profile, PostgreSQL/Keycloak/API access, the suite's operator-enabled NetworkClass phases where applicable, and controlled manager completion fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/persistence, Kind CR projection and selected controller phase; faked: Fabric/AAP completions and backend realization; omitted: OVN/FRR/KubeVirt/Fabric packet enforcement |
+| Existing source pattern | osac-installer/Makefile test SUITE=fulfillment; fulfillment-service/it; tests/e2e/vmaas/regression/test_networking_api_contract.py for request-shape controls |
 
 ##### Preconditions
 
@@ -174,9 +247,19 @@ Malformed/out-of-range/colliding/changed outputs are rejected before Kubernetes 
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: VN L3/Subnet L2 typed handoff | high | automated | IC-2 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: VN L3/Subnet L2 typed handoff | high | automated | IC-2 |
 
 - **Tier / owner:** Contract / DEV OSAC-6761. **IC:** IC-2. **Boundary:** fresh Ansible invocation and captured set_stats; Kubernetes backend is a declared fixture here.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -195,9 +278,19 @@ All required files exist. No-output success publishes no `osac_result`; apply pu
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: VN L3/Subnet L2 typed handoff | high | automated | IC-2 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: VN L3/Subnet L2 typed handoff | high | automated | IC-2 |
 
 - **Tier / owner:** Unit/Contract / DEV OSAC-6761. **IC:** IC-2. **Boundary:** input checks and real error serialization; failing backend is a fixture.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
+| Working directory | osac/osac-aap |
+| Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
+| Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
 ##### Preconditions
 
@@ -216,9 +309,19 @@ Invalid inputs fail before writes. Reported errors contain only nonempty message
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: VN L3/Subnet L2 typed handoff | high | automated | IC-1, IC-2, IC-3 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: VN L3/Subnet L2 typed handoff | high | automated | IC-1, IC-2, IC-3 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-1, IC-2, IC-3. **Boundary:** real Kind objects and Ansible environment lookup; prerequisite objects are schema fixtures, not live FRR/OVN.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -237,9 +340,19 @@ Each missing/malformed setting/prerequisite fails retryably and names the item w
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Primary CUDN realization | critical | automated | IC-3 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Primary CUDN realization | critical | automated | IC-3 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-3. **Boundary:** real Kind API plus declared CUDN/prerequisite schema fixtures; no OVN dataplane.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -259,9 +372,19 @@ Exact `evpn: "true"`, VN/tenant ownership and namespace selector are present. La
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Matching route targets and pair qualification | critical | automated | IC-3 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Matching route targets and pair qualification | critical | automated | IC-3 |
 
 - **Tier / owner:** Unit/Contract / DEV OSAC-6761. **IC:** IC-3. **Boundary:** real Jinja/role rendering; no switch or BGP session.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
+| Working directory | osac/osac-aap |
+| Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
+| Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
 ##### Preconditions
 
@@ -281,9 +404,19 @@ Every render contains MAC-VRF 0:<l2_vni> and IP-VRF 0:<l3_vni>. No hub-AS deriva
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Matching route targets and pair qualification | critical | automated | IC-3 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Matching route targets and pair qualification | critical | automated | IC-3 |
 
 - **Tier / owner:** E2E / QE with Fabric integration owners. **IC:** IC-3. **Boundary:** real OVN/FRR and the selected Fabric's MAC/IP VRFs.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -303,9 +436,19 @@ The matching pair exchanges the required tenant routes and forwards permitted tr
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: VN L3/Subnet L2 typed handoff | critical | automated | IC-3 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: VN L3/Subnet L2 typed handoff | critical | automated | IC-3 |
 
 - **Tier / owner:** Unit / DEV OSAC-6761. **IC:** IC-3. **Boundary:** IPAM validation/exclusion transform and render; no DHCP server.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
+| Working directory | osac/osac-aap |
+| Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
+| Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
 ##### Preconditions
 
@@ -325,9 +468,19 @@ Example infrastructure=[192.0.2.1/32,192.0.2.2/32], reserved=[192.0.2.128/25], w
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Disjoint pools, gateway and DNS | critical | automated | IC-3, IC-6 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Disjoint pools, gateway and DNS | critical | automated | IC-3, IC-6 |
 
 - **Tier / owner:** E2E / QE. **IC:** IC-3, IC-6. **Boundary:** deployed OVN DHCP, KubeVirt guest, real Fabric/physical DHCP and resolvers.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -348,9 +501,19 @@ Address belongs to the saved overlay pool and excludes reserved infrastructure; 
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4. **Boundary:** real Kubernetes state and independent Ansible runs, with core ordering represented explicitly.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -369,9 +532,19 @@ The first successful claim records that Subnet's API ID, independent of timestam
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4, IC-6 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4, IC-6 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4, IC-6. **Boundary:** real Kind network/state/policy objects; VM execution is omitted.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -389,9 +562,19 @@ Sibling Subnet tasks succeed without creating a second network; overlay apply fa
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4. **Boundary:** real Kind objects and Ansible cleanup.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -410,9 +593,19 @@ Owner network/baseline are removed before claim release; the VN-owned namespace 
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Owner-Subnet limit and conflict safety | critical | automated | IC-4 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761 with core lifecycle DEV. **IC:** IC-4. **Boundary:** real API conflicts and independently paused Ansible/backend operations for Kubernetes Manager-owned hub objects; no packet path. The provider Fabric backend is covered separately by shared contract Shared TC-DELETE-02 (provider-owned conformance coverage).
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed; issued-POST/delete/restart branches BLOCKED until the strict backend proof is reviewed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -434,9 +627,19 @@ A terminating owner is treated as present and produces a retryable claim failure
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-5. **Boundary:** real policy/state API objects; no packet enforcement.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -456,9 +659,19 @@ Initial group creation needs no network and selects no VM. One VN-owned namespac
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-2, IC-5 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-2, IC-5 |
 
 - **Tier / owner:** Unit/Contract / DEV OSAC-6761. **IC:** IC-2, IC-5. **Boundary:** rule translation and captured object replacements; Kubernetes policy engine omitted.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Verified existing `uv run pytest tests/unit/test_cudn_evpn_role.py tests/unit/test_cudn_evpn_delete_order.py`; extend these files for this case |
+| Working directory | osac/osac-aap |
+| Environment prerequisites | uv development dependencies, Python/Jinja/Ansible and the shared exact-input/render/error fixtures; no cluster |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: local transforms, render and isolated Ansible invocation where specified; faked: API/provider responses; omitted: deployed core/AAP, Kubernetes/OVN/FRR/KubeVirt and Fabric packets |
+| Existing source pattern | tests/unit/test_cudn_evpn_role.py: _render_cudn/_run_role_with_inputs; tests/unit/test_cudn_evpn_delete_order.py: owned cleanup and absence-order assertions |
 
 ##### Preconditions
 
@@ -478,9 +691,19 @@ Every NetworkPolicy includes Ingress and Egress, even with no rules in one direc
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5 |
 
 - **Tier / owner:** E2E / QE. **IC:** IC-5. **Boundary:** actual primary EVPN dataplane.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -499,9 +722,19 @@ Application traffic is blocked both ways before any binding. Owning DHCP and per
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5, IC-6 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5, IC-6 |
 
 - **Tier / owner:** E2E / QE. **IC:** IC-5, IC-6. **Boundary:** real VM/Fabric traffic and policy engine.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -519,9 +752,19 @@ Each VM receives exactly its selected union in both directions, follows the succ
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5, IC-6 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Baseline/exact policy and explicit unsupported ICMP | critical | automated | IC-5, IC-6 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-5, IC-6. **Boundary:** real policy/state API conflicts with controlled independent Ansible operations.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -544,9 +787,19 @@ Only UID/RV-tested application/json-patch+json is used. Conflicts are retryable 
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Namespace-before-VM and persistent addressing | critical | automated | IC-2, IC-5, IC-6 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Namespace-before-VM and persistent addressing | critical | automated | IC-2, IC-5, IC-6 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-2, IC-5, IC-6. **Boundary:** real Kind namespace/selection/policy writes and captured result; no VM CR is installed.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -566,9 +819,19 @@ Apply succeeds before VM creation and returns only vm_attachment.namespace, equa
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Namespace-before-VM and persistent addressing | critical | automated | IC-3, IC-6 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Namespace-before-VM and persistent addressing | critical | automated | IC-3, IC-6 |
 
 - **Tier / owner:** E2E / QE. **IC:** IC-3, IC-6. **Boundary:** actual KubeVirt restart/live migration, OVN allocation and Fabric binding.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -587,9 +850,19 @@ The same address is retained within the recorded overlay pool; Fabric traffic co
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Namespace-before-VM and persistent addressing | critical | automated | IC-4, IC-6 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Namespace-before-VM and persistent addressing | critical | automated | IC-4, IC-6 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-4, IC-6. **Boundary:** real namespace/policy/state API objects.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -608,9 +881,19 @@ Only the target's owned binding/artifacts disappear; the other binding, shared n
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Retry, cancellation and owned cleanup | critical | automated | IC-2, IC-4, IC-5, IC-6 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Retry, cancellation and owned cleanup | critical | automated | IC-2, IC-4, IC-5, IC-6 |
 
 - **Tier / owner:** Component integration / DEV OSAC-6761. **IC:** IC-2, IC-4, IC-5, IC-6. **Boundary:** fresh Ansible processes and real API state, with controlled failure injection.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run ansible-playbook targets/cudn_evpn/tasks/baseline.yml -e @common_vars.yml`; register this new target/race plays in the existing `make -C osac-aap test` aggregate |
+| Working directory | osac/osac-aap/tests/integration for the focused command; osac root for make |
+| Environment prerequisites | Prepared real Kind and K8S_AUTH_KUBECONFIG, installed CUDN schema fixture, isolated case IDs/parents, Ansible environment and independently controlled requests |
+| Execution status | Not run; planned case/extension, no passing evidence claimed; issued-POST/delete/restart branches BLOCKED until the strict backend proof is reviewed |
+| Real / faked / omitted | Real: Kind API storage/conflicts, Namespace/CUDN/policy objects and independent Ansible processes; faked: prerequisite objects/CUDN controller status and specified fault injection; omitted: deployed AAP and OVN/FRR/KubeVirt/Fabric packet behavior |
+| Existing source pattern | tests/integration/targets/metallb_l2_detach_annotation/tasks/baseline.yml for independent conditional-write processes; tests/unit/test_cudn_evpn_role.py for input/manifest fixtures |
 
 ##### Preconditions
 
@@ -636,9 +919,19 @@ Retries converge with the same identities/output, without duplicates or changed 
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Retry, cancellation and owned cleanup | critical | automated | IC-4, IC-6 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Retry, cancellation and owned cleanup | critical | automated | IC-4, IC-6 |
 
 - **Tier / owner:** E2E / QE with core lifecycle DEV fixtures. **IC:** IC-4, IC-6. **Boundary:** deployed VMaaS/operator/AAP/OVN/Fabric.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -658,9 +951,19 @@ Manager tasks never delete the VM. Finalizers retain ownership until cleanup suc
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Retry, cancellation and owned cleanup | critical | manual | IC-4 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Retry, cancellation and owned cleanup | critical | manual | IC-4 |
 
 - **Tier / owner:** Documentation review / documentation DEV; any recovery execution needs the platform team's approved lab procedure. **IC:** IC-4.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Manual document/source review; no executable command |
+| Working directory | enhancement-proposals (documentation repository) |
+| Environment prerequisites | Current manager/contract documents and the source/evidence specified in this case; no cluster execution |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: source documents and examples; faked: none; omitted: every runtime API, workload and packet path |
+| Existing source pattern | design.md Support Procedures, Installation and RBAC sections; existing source task/manifest examples |
 
 ##### Preconditions
 
@@ -678,9 +981,19 @@ Guidance distinguishes a remnant from a live owned network. Routine delete never
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Administrator guidance and failure classification | medium | manual | IC-1 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Administrator guidance and failure classification | medium | manual | IC-1 |
 
 - **Tier / owner:** Documentation review / documentation DEV, coordinated with OSAC-6769 and Enclave owners. **IC:** IC-1.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Manual document/source review; no executable command |
+| Working directory | enhancement-proposals (documentation repository) |
+| Environment prerequisites | Current manager/contract documents and the source/evidence specified in this case; no cluster execution |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: source documents and examples; faked: none; omitted: every runtime API, workload and packet path |
+| Existing source pattern | design.md Support Procedures, Installation and RBAC sections; existing source task/manifest examples |
 
 ##### Preconditions
 
@@ -699,9 +1012,19 @@ Guidance states that OVN serves the VM gateway, both VRFs use explicit 0:VNI RTs
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| OSAC-6761 | PRD outcome: Administrator guidance and failure classification | medium | manual | IC-1, IC-2, IC-4 |
+| [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) | PRD outcome: Administrator guidance and failure classification | medium | manual | IC-1, IC-2, IC-4 |
 
 - **Tier / owner:** Documentation review / documentation DEV. **IC:** IC-1, IC-2, IC-4.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Manual document/source review; no executable command |
+| Working directory | enhancement-proposals (documentation repository) |
+| Environment prerequisites | Current manager/contract documents and the source/evidence specified in this case; no cluster execution |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: source documents and examples; faked: none; omitted: every runtime API, workload and packet path |
+| Existing source pattern | design.md Support Procedures, Installation and RBAC sections; existing source task/manifest examples |
 
 ##### Preconditions
 
@@ -719,9 +1042,19 @@ Each path identifies the responsible setting/owner and supported repair/lifecycl
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Matching route targets and pair qualification | critical | automated | IC-1, IC-3, IC-5, IC-6 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Matching route targets and pair qualification | critical | automated | IC-1, IC-3, IC-5, IC-6 |
 
 - **Tier / owner:** E2E / QE with Fabric and OVN integration owners. **IC:** IC-1, IC-3, IC-5, IC-6. **Boundary:** complete deployed path and real Netris initially.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -742,9 +1075,19 @@ Report distinguishes real endpoints from fixtures and required skips from passes
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: VM/physical L2 and same-VN routed connectivity | critical | automated | IC-3, IC-5, IC-6 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: VM/physical L2 and same-VN routed connectivity | critical | automated | IC-3, IC-5, IC-6 |
 
 - **Tier / owner:** E2E / QE. **IC:** IC-3, IC-5, IC-6. **Boundary:** real Fabric, VM and physical client.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 
@@ -762,9 +1105,19 @@ Allowed probes and replies succeed, one-sided policy denial blocks application t
 
 | Story / Task | AC source | Priority | Automation | Interface Change |
 |---|---|---|---|---|
-| QE Task pending under OSAC-4291 | PRD outcome: Disjoint pools, gateway and DNS | critical | automated | IC-3, IC-5, IC-6 |
+| No QE ticket mapped/created by this plan; parent [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) | PRD outcome: Disjoint pools, gateway and DNS | critical | automated | IC-3, IC-5, IC-6 |
 
 - **Tier / owner:** E2E / QE. **IC:** IC-3, IC-5, IC-6. **Boundary:** real Fabric IP-VRF, owner VM and physical peer on a sibling Subnet.
+
+
+| Execution evidence | Planned value |
+|---|---|
+| Command / verification | Proposed `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py`; target file must be added |
+| Working directory | osac (mono-repo root) |
+| Environment prerequisites | Deployed compatible OSAC/AAP, OVN/FRR/KubeVirt, tenant credentials, VM template/image, DNS prerequisites and real selected Fabric pair; this case's policy/peer fixtures |
+| Execution status | Not run; planned case/extension, no passing evidence claimed |
+| Real / faked / omitted | Real: fulfillment API/DB, operator, AAP jobs, hub/VM APIs, OVN/FRR, guest DHCP/DNS and Fabric; faked: none permitted; omitted: none of the case's required boundaries |
+| Existing source pattern | tests/e2e/conftest.py: grpc/k8s_hub_client; tests/e2e/vmaas/conftest.py: k8s_virt_client/vm_template; core/helpers.py: wait_for_subnet_ready/wait_for_vmi_ip; core/runner.py: poll_until |
 
 ##### Preconditions
 

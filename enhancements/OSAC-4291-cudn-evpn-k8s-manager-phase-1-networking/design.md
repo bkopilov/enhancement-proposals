@@ -322,7 +322,7 @@ Add `osac-aap/tests/integration/targets/cudn_evpn/tasks/baseline.yml` and indepe
 
 ### E2E Tests
 
-Add `tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` for the full deployed journey, using the existing `grpc`, `k8s_hub_client`, `k8s_virt_client`, `vm_template` fixtures and `wait_for_subnet_ready`, `wait_for_vmi_ip`, `poll_until` helpers. The planned invocation is `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` from the OSAC root once implemented. Record exact versions, commands and real/faked dependencies. Prove DHCP gateway/DNS, denied/allowed traffic, restart/live-migration address stability and safe teardown with real Fabric, initially Netris; every additional pair requires its own report.
+Add `tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` for the full deployed journey, using `grpc`/`k8s_hub_client` from tests/e2e/conftest.py and `k8s_virt_client`/`vm_template` from tests/e2e/vmaas/conftest.py and `wait_for_subnet_ready`, `wait_for_vmi_ip`, `poll_until` helpers. The planned invocation is `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` from the OSAC root once implemented. Record exact versions, commands and real/faked dependencies. Prove DHCP gateway/DNS, denied/allowed traffic, restart/live-migration address stability and safe teardown with real Fabric, initially Netris; every additional pair requires its own report.
 
 ## Graduation Criteria
 
