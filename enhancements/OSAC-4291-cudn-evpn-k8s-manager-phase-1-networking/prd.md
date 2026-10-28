@@ -4,77 +4,73 @@
 |---|---|
 | Author(s) | Benny Kopilov |
 | Jira | [OSAC-4291](https://redhat.atlassian.net/browse/OSAC-4291) |
-| Alignment work | [OSAC-6758](https://redhat.atlassian.net/browse/OSAC-6758), under [OSAC-6757](https://redhat.atlassian.net/browse/OSAC-6757) |
 | Date | 2026-10-28 |
-
-This revision follows the approved [networking contract in PR #357](https://github.com/osac-project/enhancement-proposals/pull/357) and its Unified Networking and VMaaS requirements, with the user-requested route-target compatibility amendment from [osac PR #1971](https://github.com/osac-project/osac/pull/1971) and the shared namespace lifecycle proposed for shared-contract review. Technical decisions and superseded clarifications are recorded in [clarifications](clarifications.md); implementation and evidence are described in the [design](design.md). These proposals do not change PR #357's approval status.
 
 ## Problem Statement
 
-OSAC has an EVPN manager that creates and deletes an overlay network using Fabric-provided segment identifiers. The current manager does not implement VM SecurityGroup enforcement or the required policy binding before VM creation. Tenants need VMs and physical hosts to share an isolated network with consistent address allocation, DNS and security policy. The Kubernetes Manager's policy protects VM pods; the selected Fabric Manager must enforce SecurityGroups on physical ports whenever BMaaS or CaaS is enabled. Kubernetes policy does not satisfy that physical enforcement requirement, and a physical attachment cannot become Ready after a no-op. Administrators need the existing manager to follow the approved networking contract so it can interoperate with a conforming Fabric Manager. Until that implementation and its lab validation are complete, a successfully created network alone does not establish workload connectivity or isolation.
+OSAC can create and delete EVPN overlay networks, but tenants still need SecurityGroups, reliable addressing and policy protection from first boot before those networks are usable for VMs. Tenants need permitted VM-to-physical connectivity, stable addresses and actionable failures without changing how they create VirtualNetworks and Subnets. Successful network creation alone does not establish connectivity or isolation.
 
 ## In Scope
 
-- VMaaS networking on the single provider-owned networking hub, in connected IPv4 deployments, through the release's supported EVPN path.
-- Preserve the existing VirtualNetwork/Subnet APIs, immutable specifications, IDs, parent references and recorded network allocations. The namespace/policy additions do not require tenants to replace or edit those resources. Existing live legacy networks remain untouched; activation retains PR #357's fresh-install-only boundary. [User: 2026-10-28]
-- Fabric interoperability using the selected compatible Fabric Manager, with automatic segment coordination and disjoint VM, physical-host and guest-ingress address allocations. The host compatibility fix applies to this manager with every selected Fabric; administrators must verify matching route exchange for that pair. Real Netris interoperability is the initial required lab validation; other pairs need their own evidence.
-- One VM-capable Subnet per VirtualNetwork under the current manager limit. Other Subnets remain available for physical workloads; VM attachment on one of those Subnets reports the limitation explicitly. Adding a Subnet does not invalidate the existing owner's VM network.
-- Workload addresses, gateway and agreed DNS resolvers supplied through DHCP. A VM keeps its address across restart and live migration. The Fabric supplies routing to physical workloads and other Subnets in the same VirtualNetwork.
-- VM SecurityGroup enforcement before a VM first uses its tenant network, baseline protection for unbound workloads, consistent rule updates, deterministic retries and cleanup of owned resources. The Kubernetes Manager's policy applies to VM pods; physical-port SecurityGroup enforcement remains the Fabric Manager's responsibility under the shared contract.
-- SecurityGroups can be prepared before any Subnet exists and remain available while their VirtualNetwork exists, including after its VM-capable Subnet is removed. Removing one VM or Subnet preserves other live groups and workloads. [User]
-- Administrator installation and diagnostic guidance, actionable prerequisite and unsupported-path errors, and evidence that distinguishes implementation checks from real connectivity and policy validation.
+- VMaaS on one provider-owned networking hub in connected IPv4 deployments.
+- Existing VirtualNetwork/Subnet Create/Get/List/Delete APIs, immutable specifications, IDs, parent references and recorded allocations remain compatible. Supported retries preserve network identity and workload placement. New behavior activates only on fresh installations; existing live legacy networks remain unchanged.
+- Connectivity through a compatible selected Fabric pair, with disjoint VM, physical-host and ingress address allocations. Netris is the initial required real-pair validation; additional pairs need separate evidence.
+- One VM-capable Subnet per VirtualNetwork under the platform limit. Unsupported VM attachment reports the limitation without disrupting the existing owner or physical siblings.
+- DHCP supplies workload addresses, gateway and the agreed reachable DNS resolvers. A VM keeps its address through restart and live migration. Permitted traffic reaches physical workloads and other Subnets in the same VirtualNetwork.
+- VM SecurityGroups protect traffic from first boot, keep unbound workloads isolated, apply rule changes consistently and preserve other workloads during retries and cleanup.
+- Explicit ICMP SecurityGroup rules are unsupported with this manager. They fail with a permanent, actionable error and are never broadened. Administrators receive the same validation for default rules before tenant onboarding; unsupported defaults prevent activation. Other managers retain their own supported protocols.
+- SecurityGroups can exist before any Subnet and remain available while their VirtualNetwork exists. Removing a VM or its Subnet preserves other live groups and workloads.
+- Administrator guidance for prerequisites, unsupported paths, diagnostics and the difference between configuration checks and proven connectivity.
 
 ## Out of Scope
 
-- Additional networking hubs, cross-hub connectivity, secondary tenant attachments, IPv6, dual-stack and disconnected networking deployments.
-- VM attachment to multiple Subnets of one VirtualNetwork while the current one-network limit applies; an owner network is not handed to an existing sibling Subnet when its owner is deleted.
-- Automatic configuration of physical links, node tunnel endpoints or BGP peering by a tenant networking task.
-- New inter-VirtualNetwork peering, new network types, provider-written Kubernetes Managers, migration/adoption of existing provider state, and MetalLB address-pool provisioning by this manager.
+- Additional hubs, cross-hub connectivity, secondary tenant attachments, IPv6, dual-stack and disconnected deployments.
+- VM attachment to multiple Subnets in one VirtualNetwork, or automatic handover to an existing sibling after owner deletion.
+- Tenant-task configuration of physical links, host tunnel endpoints or BGP peering.
+- Inter-VirtualNetwork peering, new network types, provider-written Kubernetes Managers, legacy-state adoption/migration and MetalLB address-pool provisioning.
+- Changes to physical-port SecurityGroup support or the shared update-status protocol.
 
 ## User Stories
 
 ### Cloud Infrastructure Admin
 
-- As a Cloud Infrastructure Admin, I want to select the supported EVPN Kubernetes Manager with a compatible Fabric Manager during installation so that VMs can use the provider's tenant networks.
-- As a Cloud Infrastructure Admin, I want explicit prerequisites for peering, address allocation and DNS so that a deployment can be prepared before tenant traffic starts.
-- As a Cloud Infrastructure Admin, I want diagnostics that distinguish a missing prerequisite, a manager limitation and a connectivity failure so that the correct configuration or provider component can be repaired.
+- Select the supported EVPN manager with a compatible Fabric during installation and verify the resulting network.
+- Prepare documented peering, address allocation and DNS prerequisites before tenant traffic starts.
+- Identify missing prerequisites, unsupported default policies, manager limits and connectivity failures from actionable diagnostics.
 
 ### Tenant Admin / Tenant User
 
-- As a Tenant Admin or Tenant User, I want VirtualNetwork and Subnet references, CIDRs, gateways and recorded segment identities to survive supported retries without resource recreation or address changes so that existing workloads keep their network placement. [User: 2026-10-28]
-
-- As a Tenant Admin or Tenant User, I want a VM on a supported Subnet to communicate with permitted physical workloads using the normal OSAC networking resources so that applications can span virtual and physical infrastructure.
-- As a Tenant Admin or Tenant User, I want VM and physical addresses to be allocated without collisions so that both can share the Subnet reliably.
-- As a Tenant Admin or Tenant User, I want selected SecurityGroups to protect VM traffic from first boot so that unbound or incompletely prepared workloads do not exchange application traffic.
-- As a Tenant Admin or Tenant User, I want a VM's address to survive restart and live migration so that permitted Fabric traffic continues to reach it.
-- As a Tenant Admin or Tenant User, I want an unsupported VM attachment to explain the owner-Subnet limitation while preserving existing workloads so that the network can be structured within the supported boundary.
-- As a Tenant Admin or Tenant User, I want deleting my VM or network to remove its owned networking state while preserving other live resources so that retries and partial failures do not damage another workload.
+- Use existing VirtualNetwork/Subnet requests and references, retaining CIDRs, gateways, segment identities and workload placement through supported retries.
+- Connect a VM on a supported Subnet to permitted physical workloads using normal OSAC networking resources.
+- Share a Subnet without VM/physical address collisions.
+- Apply selected SecurityGroups from first boot and keep application traffic blocked before policy preparation completes.
+- Receive an explicit unsupported-policy error for ICMP without changing an existing working policy.
+- Retain a VM's address through restart and live migration.
+- Receive a clear owner-Subnet limitation for unsupported attachments while existing workloads continue working.
+- Delete owned networking state after VM/network removal without damaging another live resource or recreating deleted state later.
 
 ## Assumptions
 
-- The approved EVPN gateway, route-advertisement and DHCP behavior can be realized by the selected hub and Fabric versions. A real Netris/Fabric-pair result is still required; document approval does not establish runtime support.
-- Supported hub APIs can provide the required DNS settings, address stability and policy behavior. The design records the unresolved mechanism choices and their implementation impact.
+- The selected platform versions support the primary EVPN network, policy and persistent-address mechanisms specified in the [design](design.md).
+- The agreed DNS list is deliverable through the installed platform's supported DHCP DNS-Service path; an unsupported configuration prevents activation.
+- Supported-pair claims require actual route and traffic evidence.
 
 ## Dependencies
 
-- The selected shared namespace/policy direction requires review of the VN/Subnet lifecycle amendment, safe deletion, exact platform enforcement and concurrent policy updates before activation. [User]
-
-- Shared-contract and Fabric-owner review must reconcile PR #1971's compatibility behavior with PR #357. Later integration with controller-provided route-target values needs an agreed API/handoff before it can replace the compatibility behavior; it is not claimed available by this revision.
-- [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) supplies shared manager resolution, stored address layouts, ordered tasks, typed handoffs and workload integration; [OSAC-6768](https://redhat.atlassian.net/browse/OSAC-6768) tracks the source API work.
-- [OSAC-6769](https://redhat.atlassian.net/browse/OSAC-6769) tracks installation settings and admission deployment. The Enclave plugin and Wizard must consume and validate those settings through their separately scoped work.
-- [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761) implements the manager-specific changes after this documentation and its implementation delta are reviewed.
-- [Agentless alignment](https://redhat.atlassian.net/browse/OSAC-6755) and [Netris alignment](https://redhat.atlassian.net/browse/OSAC-6756) own Fabric realization. A Fabric/Kubernetes pair is supported only with recorded applicable validation.
-- OVN-Kubernetes, KubeVirt, FRR-K8s and the installed underlay must satisfy the prerequisites and lifecycle checks in the design. BMaaS/CaaS use Fabric attachments and retain their own workload orchestration.
+- The manager integration contract must agree on the gateway, VN/Subnet identifiers, route targets, shared namespace lifetime and installer ownership before activation.
+- Shared-core networking supplies compatible inputs, recorded state and workload lifecycle integration; the installer and Enclave configuration path must deliver and validate the matching settings.
+- Manager implementation and a compatible Fabric implementation must pass their component checks and the deployed VM journey.
+- Strict deletion requires a reviewed backend mechanism preventing already-issued creates from restoring deleted state. This remains an implementation blocker; retained tombstones and eventual cleanup are not selected.
 
 ---
 
 ## Provenance
 
 Authored: revise @ prd 0.11.5 - 1c6e8de, workspace codex/cudn-evpn-route-targets @ 38d18d944 (7 behind origin/main)
-Final: revise @ prd 0.11.5 - 1c6e8de, workspace codex/osac-6761-cudn-evpn-contract @ a6aa33f0b
+Final: respond @ prd 0.11.5 - 1c6e8de, workspace codex/osac-6761-cudn-evpn-contract @ a6aa33f0b (79 behind origin/main)
 
-> Context changed between revise and revise.
-
+> Context changed between revise and respond.
+>
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"1c6e8de","source_repo":"a6aa33f0b","source_repo_branch":"codex/osac-6761-cudn-evpn-contract","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"1c6e8de","source_repo":"a6aa33f0b","source_repo_branch":"codex/osac-6761-cudn-evpn-contract","commits_behind_main":79,"commits_ahead_main":2,"main_ref":"main","phases":["revise","revise","revise","revise","revise","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->

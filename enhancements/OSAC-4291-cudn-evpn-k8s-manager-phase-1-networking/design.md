@@ -6,17 +6,12 @@ creation-date: 2026-09-03
 last-updated: 2026-10-28
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-4291
-  - https://redhat.atlassian.net/browse/OSAC-6757
   - https://redhat.atlassian.net/browse/OSAC-6758
-prd:
-  - prd.md
+prd: prd.md
 see-also:
-  - /enhancements/OSAC-1433-network-manager-integration-contract-networking
-  - /enhancements/OSAC-1433-unified-networking
-  - /enhancements/OSAC-1433-default-networking
-  - /enhancements/OSAC-1435-vmaas-networking
-  - /enhancements/OSAC-1436-caas-networking
-  - /enhancements/OSAC-1437-bmaas-networking
+  - /enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md
+  - /enhancements/OSAC-1433-unified-networking/design.md
+  - /enhancements/OSAC-1435-vmaas-networking/design.md
 replaces:
   - N/A
 superseded-by:
@@ -27,429 +22,335 @@ superseded-by:
 
 ## Summary
 
-OSAC's `cudn_evpn` Kubernetes Manager realizes a primary Layer2 EVPN ClusterUserDefinedNetwork (CUDN), using the Fabric segment and recorded address plan supplied through the approved manager contract. It prepares VM policy and a tenant namespace before VM creation, with one owner Subnet per VirtualNetwork under the current platform limit. See [PRD](prd.md) for detailed requirements.
-
-This is the OSAC-6758 documentation alignment draft under [OSAC-6757](https://redhat.atlassian.net/browse/OSAC-6757). [PR #357](https://github.com/osac-project/enhancement-proposals/pull/357), merged as `a430f35da98461b5331f690332b1eebd3a3012b5`, defines the approved baseline. This revision includes the user-requested [RT fix in osac PR #1971](https://github.com/osac-project/osac/pull/1971) as a proposed exception to its route-target clauses; shared-contract approval is still required. It records the manager delta, unresolved realization choices and required validation, without asserting completed implementation or a passed EVPN Fabric pair. The implementation baseline is OSAC main `38057b862f2d86e4dab53a386d5be9371bbb65ab`; PR #1971's inspected head is `38d18d944035527db02bd95dd903f08b4e9ecedd`.
-
-The user selected one VN-owned workload namespace and one NetworkPolicy per SecurityGroup (D26). This proposal replaces the baseline's manager-specific VN no-op with namespace creation/deletion and retains that namespace across owner Subnet deletion. Shared-contract review remains required; this selection does not resolve the remaining concurrency/deletion evidence gates. [User]
-
-The supporting [route-target amendment](route-target-amendment.md) states the exact proposed shared-contract edits. The [write-protection review](write-protection-review.md) gives concrete policy predicates and the remaining already-issued-create race. Its evaluated coordinator is insufficient on its own and is not selected for implementation by this document.
+The `cudn_evpn` manager connects VM primary networks to an EVPN Fabric using a VirtualNetwork-owned namespace and one ClusterUserDefinedNetwork per VirtualNetwork. It prepares SecurityGroup policies and VM bindings before boot, preserves recorded addresses and identifiers on retries, and removes only owned state.
 
 ## Motivation
 
-The existing role creates and deletes a CUDN from legacy Fabric outputs. The approved networking model additionally requires minimal snapshots with stable API IDs, recorded IPAM, independent SecurityGroup tasks, namespace-first VM attachment and typed results. These boundaries let a compatible Fabric Manager supply a segment without manager-specific OSAC orchestration.
-
-The [manager integration contract](/enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md) owns the task interface. [Unified Networking](/enhancements/OSAC-1433-unified-networking/design.md) owns resource meaning and allocation; [VMaaS](/enhancements/OSAC-1435-vmaas-networking/design.md) owns the VM lifecycle. This document describes the Kubernetes Manager's responsibilities within those contracts.
+Tenants need usable VM networks with isolation, DHCP, persistent addresses and connectivity to permitted Fabric destinations. The [manager integration contract](/enhancements/OSAC-1433-network-manager-integration-contract-networking/design.md) defines the task interface; [Unified Networking](/enhancements/OSAC-1433-unified-networking/design.md) defines tenant resources; [VMaaS](/enhancements/OSAC-1435-vmaas-networking/design.md) owns VM creation and teardown. The [PRD](prd.md) defines the user outcomes.
 
 ### Goals
 
-- Extend the existing role to implement the eight internal tasks with the prescribed snapshots, typed outputs and error classification.
-- Consume recorded gateway, address pools and Fabric segment without independently allocating or reshaping them.
-- Establish primary-network policy and deterministic namespace preparation before VM creation.
-- Preserve stable API-ID ownership, existing VirtualNetwork/Subnet specifications and recorded allocations across supported retries, with safe cleanup and the owner-Subnet limit.
-- Identify the supported platform mechanisms and real-pair evidence required before claiming the target is available.
+- Implement the eight Kubernetes Manager tasks with minimal saved snapshots and typed results.
+- Prepare the namespace, primary network and selected policy before VM creation.
+- Preserve VirtualNetwork/Subnet APIs, ownership, immutable specifications, recorded address pools and segment identifiers across supported retries.
+- Support one VM-capable owner Subnet per VirtualNetwork, with explicit errors for unsupported attachments.
 
 ### Non-Goals
 
-- New networking APIs, generic provider-written Kubernetes Managers, network types beyond `evpn`, and another shared-core dispatcher.
-- Multiple networking hubs, secondary VM tenant attachments, IPv6, dual-stack and disconnected networking.
-- Inter-VirtualNetwork peering, migration/adoption of existing Fabric state, and alternate gateway topologies.
-- Tenant-task automation of underlay peering/VTEPs or creation of MetalLB pools for CaaS ingress.
+- Tenant Update/Patch operations on VirtualNetwork/Subnet, tenant-configured VNIs or route targets.
+- Migration/adoption of live legacy networking, additional hubs, secondary tenant attachments, IPv6, dual-stack or disconnected deployments.
+- Manager configuration of host uplinks, peering, FRR, VTEPs or MetalLB address pools.
+- Changes to Fabric SecurityGroup no-op permissions or the shared SecurityGroup update-status protocol.
 
 ## Proposal
 
-`cudn_evpn` is an OSAC-shipped Ansible role with network type `evpn`. The Fabric Manager owns physical networking, its IP-VRF/MAC-VRF, the anycast gateway, physical DHCP and SecurityGroup enforcement on physical ports whenever BMaaS or CaaS is enabled. The Kubernetes Manager owns the hub overlay network, overlay DHCP, VM pod policy, and its namespaces/bindings. Its NetworkPolicy protects VM pods and does not replace Fabric enforcement for physical hosts. A physical apply cannot no-op or move the port without an effective SecurityGroup binding; an unsupported rule must fail permanently under the shared contract. The release supports one provider-owned networking hub; tasks reach it through the job service account.
+### Terminology
 
-Core records manager identities, immutable address layouts and accepted typed segments, orders the tasks and validates their outputs. Shared adoption is tracked by [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766). Manager code is [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761); Fabric realization is [Agentless OSAC-6755](https://redhat.atlassian.net/browse/OSAC-6755) and [Netris OSAC-6756](https://redhat.atlassian.net/browse/OSAC-6756). The current release's manager/type compatibility requirements apply to every pair.
+| Term | Meaning |
+|---|---|
+| VN | VirtualNetwork, the routing-domain parent of Subnets and SecurityGroups |
+| CUDN | OVN-Kubernetes ClusterUserDefinedNetwork |
+| VNI | 24-bit VXLAN network identifier; L2 belongs to a Subnet, L3 to a VN |
+| RT | EVPN route target; `0:<l2_vni>` for MAC-VRF and `0:<l3_vni>` for IP-VRF |
+| VRF | Virtual routing and forwarding domain; MAC-VRF bridges, IP-VRF routes |
+| ASN | BGP autonomous-system number, independent of the explicit RT encoding |
+| UID / RV | Kubernetes object UID and opaque resourceVersion, used as conditional-write preconditions |
+| Owner Subnet | The Subnet API ID recorded by the VN's one CUDN; it owns the VM-capable realization until deletion |
+
+The Fabric allocates VNIs, carries the MAC-VRF/IP-VRF and routes the IP-VRF. OVN-Kubernetes serves the VM gateway at `ipam.gateway_ipv4` through `defaultGatewayIPs`, routing symmetrically into the IP-VRF. A Fabric gateway for physical workloads is a BMaaS follow-up concern; it must not be assumed to serve the VM gateway or introduce a competing gateway. Physical enforcement remains governed by the existing shared contract.
 
 ### Workflow Description
 
 #### Installation
 
-1. The Cloud Infrastructure Admin and provider agree the hub AS, per-node BGP addresses, Fabric peers/AS, VTEP CIDR, reserved VNI range and workload DNS resolvers.
-2. The administrator installs the required OVN-Kubernetes, FRR-K8s, KubeVirt and node networking prerequisites and configures peering with every hub node. The Fabric routes the VTEP CIDR in the underlay. Adding/removing hub nodes requires corresponding provider peering maintenance.
-3. The installer supplies the immutable manager registration and networking instance-group configuration. Core admits networking creation once its readiness gates pass.
-4. The administrator verifies the actual hub/Fabric versions and records the supported-pair validation separately from registration success.
+1. The provider prepares Fabric peers, matching VRF imports/exports, VTEP underlay reachability and at least 1550-byte frame capacity for a 1500-byte workload MTU.
+2. The administrator supplies `osac-infra` `evpn` values. The installer owns NMState, per-node uplink and VTEP addresses, hub network configuration, `tenant-vtep`, FRR, and `RouteAdvertisements` named `osac-evpn`; that advertisement selects CUDNs with `evpn: "true"`. It waits for BGP Established. Installer delivery is a dependency tracked in [osac #1993](https://github.com/osac-project/osac/pull/1993); its availability and real-cluster validation gate activation.
+3. The installer registers the immutable `cudn_evpn` role with `network_type: evpn`, supplies the networking instance-group settings/Secret and validates the address plan, DNS delivery and installed API capabilities before admitting tenants.
+4. Validate each selected Fabric/Kubernetes pair with actual routes and traffic. A merged host template or successful registration does not establish pair support.
 
-#### Network and VM Creation
+#### Creation and attachment
 
-1. A Tenant Admin or Tenant User creates a VirtualNetwork, Subnet and SecurityGroups through the normal OSAC APIs; tenants supply no VNIs or route targets.
-2. Core runs Fabric create before Kubernetes create for the VirtualNetwork, Subnet and groups. In this proposal, Kubernetes VN create prepares the VN namespace, allowing group creation before any Subnet. Fabric `create_subnet` returns a typed segment; core validates and records it before starting dependent Kubernetes work.
-3. The manager's first `create_subnet` to claim an unowned VN network records the Subnet API ID, realizes its CUDN and baseline protection, and completes its prerequisite/readiness checks. A non-owner Subnet create succeeds without creating a second hub network.
-4. VMaaS creates the overlay NetworkAttachment. Core calls Kubernetes `apply_network_attachment` before the VM exists. The manager checks owner support, validates the shared VN-owned primary-network namespace and baseline, binds policy by the ComputeInstance API ID, and returns only the namespace. Different targets in the same VN share it.
-5. VMaaS creates the VM in that namespace, supplies the API-ID pod label and `l2bridge` interface, and discovers its overlay IPv4 address. Core then runs the Fabric overlay bind with that address. Network readiness follows the approved task ordering.
-6. A VM request on a non-owner Subnet fails at attachment apply with the explicit permanent implementation-limit message. The other Subnet remains usable for physical attachments; the existing owner's network remains usable.
+1. Core creates the VN through Fabric first. Fabric returns integer `l3_vni`, with the existing optional `backend_id`. Core validates and records the L3 VNI in private `VirtualNetwork.status.l3Vni` before dependent Subnet tasks.
+2. Kubernetes `create_virtual_network` prepares the VN namespace. SecurityGroups can then be created before any Subnet.
+3. Fabric `create_subnet` receives that parent `l3_vni` and recorded IPAM and returns only `network_segment: {type: evpn, l2_vni: <integer>}`. Core accepts the segment into `Subnet.status.networkSegment` before Kubernetes work.
+4. Kubernetes `create_subnet` atomically creates the VN-keyed CUDN to claim it for one Subnet API ID. It installs baseline protection and waits for readiness for the current CUDN generation. Sibling Subnet network creates succeed without changing the CUDN or owner.
+5. Before a VM exists, Kubernetes `apply_network_attachment` validates the owner and all selected current group policies, binds the ComputeInstance API ID and returns exactly `vm_attachment: {namespace: <VN namespace>}`.
+6. VMaaS creates the VM with an `l2bridge` primary interface, persistent-IP claim handling and the pod label `osac.openshift.io/compute-instance-id: <ComputeInstance API ID>`. It discovers the VM address before core runs the Fabric overlay apply.
 
-The sequence shows the namespace/policy gate before VM creation and the Fabric bind after address discovery. The manager never inspects or patches the VM.
-
-```mermaid
-sequenceDiagram
-    participant Core as OSAC core
-    participant Fabric as Fabric Manager
-    participant K8s as cudn_evpn
-    participant VM as VMaaS
-    Core->>K8s: create_virtual_network after Fabric success
-    K8s->>K8s: prepare VN-owned namespace
-    Core->>K8s: create_security_group before any Subnet
-    K8s->>K8s: install unbound group policy
-    Core->>Fabric: create_subnet with recorded IPAM
-    Fabric-->>Core: network_segment
-    Core->>Core: validate and record segment
-    Core->>K8s: create_subnet with snapshots and segment
-    K8s-->>Core: successful play, no typed output
-    Core->>K8s: apply_network_attachment before VM exists
-    K8s-->>Core: vm_attachment.namespace
-    Core->>VM: accepted namespace, labels and l2bridge
-    VM-->>Core: discovered VM IPv4 address
-    Core->>Fabric: apply_network_attachment with VM address
-```
+A VM attachment to a non-owner Subnet fails permanently with `cudn_evpn supports VM attachments only on the owner Subnet of this VirtualNetwork`. That failure changes neither the existing owner nor physical siblings. The manager never reads or mutates a VM/VMI.
 
 #### Deletion
 
-VMaaS removes its VM resources before core runs Fabric attachment delete and then Kubernetes attachment delete. The manager removes only that target's binding membership and per-VM artifacts; the VN namespace and other bindings remain. Core retains finalizers until cleanup succeeds.
-
-After overlay attachments are gone, owner `delete_subnet` removes its network/baseline and releases the claim, retaining the VN-owned namespace and group policies. Other Subnet deletes leave the network alone. There is no sibling handover; a subsequent create can claim after cleanup. Group deletion removes only its policy after no attachment selects it. VN delete removes its namespace after child teardown and reviewed foreign/live-resource protection checks. The proposed VN tasks have namespace side effects and no typed output; they replace PR #357's manager-specific no-op clause. [User]
+VMaaS removes the VM before core runs Fabric attachment delete followed by Kubernetes attachment delete. Unbinding removes only the target ID; the shared namespace, baseline and other targets remain. Group deletion removes that group's policy after references are gone. Owner Subnet deletion removes its CUDN and baseline and releases the claim without handover; it retains the VN namespace and independent groups. VN deletion removes its namespace only after all children are gone and strict owned cleanup is complete. Core retains finalizers on failed or unproven cleanup.
 
 ### API Extensions
 
-This manager alignment adds no tenant API. VirtualNetwork and Subnet retain their existing Create/Get/List/Delete request and response contracts, required fields, tenant ownership, parent references, immutable specifications and default-network selection. No new tenant Update/Patch operation or namespace/policy field is added to them. The manager consumes the shared-core snapshot, recorded `Subnet.status.ipam`, accepted `status.networkSegment`, NetworkAttachment and typed namespace result defined by PR #357. Shared-core source API/CRD work, status projection, admission, task dispatch and VM consumption belong to OSAC-6766 and its children. [User: 2026-10-28]
+No tenant API extension is introduced. Existing VirtualNetwork/Subnet Create/Get/List/Delete contracts, IDs, parent references, immutable specifications and default selection remain. VN L3 and Subnet L2 identifiers are internal observed state; tenants do not supply them.
 
-Its internal contract gains the six task files missing from the existing role and replaces legacy inputs on the two Subnet files. If the networking controller is unavailable, dependent attachments do not become ready and VM creation waits; the manager cannot bypass that gate.
+Core saves task input once and supplies explicit `tenant`, stable API-ID snapshots, recorded `ipam`, parent `l3_vni` and accepted `{type, l2_vni}` where required. It validates every typed result and preserves values for retry/delete. Source API/CRD projection and dispatch are shared-core work under [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766); this manager does not write OSAC custom resources.
 
-## UX Alignment
-
-Tenant VM/network forms continue to use the ordinary Subnet and SecurityGroup references. The manager adds no tenant-facing VNI, RT or peering control. Shared console work must present manager failure, retry and owner-limit diagnostics accurately; the separate UI drafts in OSAC-6766 own that integration. The installation controls and their Enclave handoff are assessed below.
+**Policy API restriction:** this manager rejects an explicit `icmp` SecurityGroup rule with `osac_error: {message: "cudn_evpn does not support explicit ICMP SecurityGroup rules", retryable: false}` before any policy mutation. The public SecurityGroup schema still accepts ICMP for other managers; selecting `cudn_evpn` makes that rule unsupported, not silently broadened. Installation validates default group rules before tenant onboarding, so an ICMP default fails installation with the same diagnostic rather than failing every tenant's default networking. TCP/UDP ranges and `all` retain exact shared-contract semantics.
 
 ### Implementation Details/Notes/Constraints
 
-#### Fixed Task Interface
+#### Task interface
 
-Every entry point is `tasks/<task>.yaml` in `osac.templates.cudn_evpn`, invoked by the generic playbook with one `osac_job_vars` value. It includes `{manager: {name, type: kubernetes, ansible_role}, task, tenant, resource}` plus only the task-defined fields. Settings and credentials are environment variables; inputs contain no cluster selector or secrets. [Contract: §§4.3–4.6, 4.10]
+Every task receives the shared `osac_job_vars` envelope and explicit tenant. A successful task has no `osac_result` unless the table lists one. Malformed/missing installation settings and API conflicts fail retryably; invalid inputs, unsupported policy or non-owner VM attachment fail permanently. Errors are sanitized and fail the Ansible play.
 
-| Task pair | Additional input | Required effect | Typed result |
+| Task pair | Inputs in addition to manager/task/tenant | Create/apply and delete behavior | Result |
 |---|---|---|---|
-| create/delete_virtual_network | Resource VN snapshot with spec.ipv4Cidr | Proposed VN-owned shared namespace creation/safe final deletion; shared-contract amendment required | None |
-| create/delete_subnet | virtual_network, ipam, network_segment; resource Subnet snapshot with spec.ipv4Cidr | Claim/realize or remove the owner's network and baseline; non-owner implementation-limit behavior | None |
-| create/delete_security_group | virtual_network; resource group snapshot with spec.ingressRules/spec.egressRules | One unbound policy per group, conditional atomic rule replacement, or owned policy removal | None |
-| apply/delete_network_attachment | target, network_attachment, virtual_network, subnet, ipam, network_segment | Overlay namespace/policy preparation or owned cleanup | Apply only: vm_attachment.namespace |
+| `create_virtual_network` / `delete_virtual_network` | VN snapshot | Create/reuse VN namespace; remove it only at final VN teardown | None |
+| `create_subnet` / `delete_subnet` | Subnet and VN snapshots, `ipam`, parent `l3_vni`, `{type, l2_vni}` segment | Claim/reconcile VN-keyed CUDN and baseline; owner delete removes these without namespace/group removal or handover | None |
+| `create_security_group` / `delete_security_group` | Group and VN snapshots, complete rules | Create/conditionally replace one policy per group; remove that policy on delete | None |
+| `apply_network_attachment` / `delete_network_attachment` | Attachment/target/Subnet/VN snapshots, group IDs, segment, parent `l3_vni` | Bind/unbind target ID in current group selectors, preserving rules and other IDs | `vm_attachment: {namespace}` on apply only |
 
-A snapshot contains `apiVersion`, `kind`, top-level stable API `id`, `metadata: {name, namespace, uid, generation}`, and only the prescribed `spec` fields. Ownership uses `id`; the tenant comes from `osac_job_vars.tenant`, not an assumed snapshot annotation. Attachment `resource.id` equals `target.id`; the target is `{kind: ComputeInstance, id}` and the interface is `overlay`. SecurityGroup references are distinct API IDs in `network_attachment.security_group_ids`. The manager ignores a later `interface.ipv4_address` field added for Fabric binding.
+#### Namespace, CUDN and atomic owner claim
 
-Only apply publishes:
+Names are keyed by the never-reused VN API ID: namespace and CUDN `ce-<VN UUID>`. Group names use `sg-<group UUID>`. These are creation rules for fresh activation; supported retries reuse recorded compatible names and UIDs. Missing/foreign identity never permits replacement.
 
-```yaml
-osac_result:
-  vm_attachment:
-    namespace: <prepared-namespace>
-```
-
-No-output tasks publish no `osac_result`. Failures publish a sanitized `osac_error: {message: <nonempty-string>, retryable: <boolean>}` when possible and fail the play. No version/profile/identity result wrapper is added. Core associates the result with the launched job and checks the namespace exists with `osac.openshift.io/tenant` equal to the input tenant.
-
-#### Address Plan, Segment and Gateway
-
-The accepted segment has exactly `{type: evpn, l2_vni: <integer>, l3_vni: <integer>}`. Both VNIs are different integers from 1 to 16777215. Core validates cross-resource uniqueness and stores the segment. The approved shared contract also rejects a hub AS above 65535 with a VNI above 65535. This proposal retains that shared admission rule until Q5 settles its disposition; adopting explicit 0:VNI alone does not claim a wider accepted range, and the rule is not described as a property of the 0:VNI encoding.
-
-Core supplies a recorded plan such as:
-
-```yaml
-ipam:
-  gateway_ipv4: 10.0.1.1
-  overlay_ipv4_cidrs: [10.0.1.0/25]
-  physical_ipv4_cidrs: [10.0.1.128/26]
-  lb_vip_ipv4_cidrs: [10.0.1.192/26]
-network_segment:
-  type: evpn
-  l2_vni: 31
-  l3_vni: 32
-```
-
-These are allocation pools within the same `10.0.1.0/24` L2 Subnet. The manager reserves all CIDRs outside the overlay pool; in this example the minimal exclusion is `10.0.1.128/25`. Network, broadcast and gateway addresses are never workload allocations. OVN infrastructure addresses come from its overlay range. Empty physical/lbVip lists are valid; the immutable recorded plan is reused for retries and deletion. [Contract: §4.8]
-
-The primary Layer2 CUDN sets `transport: EVPN`, the installed VTEP reference, L2/L3 VNIs, MTU 1500, the full Subnet CIDR, recorded gateway and non-overlay reservations. Fabric supplies the anycast gateway over the MAC-VRF; the network has no OVN router port. It does not create a second gateway or coordinate two gateway MACs. [Contract: §§4.9–4.10]
-
-#### Explicit Route-Target Compatibility Fix
-
-This proposal carries PR #1971's host-side behavior for every network created by `cudn_evpn`, without a Netris or switch-vendor condition:
-
-```yaml
-evpn:
-  vtep: tenant-vtep  # example installed VTEP
-  macVRF:
-    vni: 31
-    routeTarget: "0:31"
-  ipVRF:
-    vni: 32
-    routeTarget: "0:32"
-```
-
-The general rules are `macVRF.routeTarget = "0:<l2_vni>"` and `ipVRF.routeTarget = "0:<l3_vni>"`; each field uses its own supplied VNI. The typed segment remains the current VNI-only shape. PR #1971 does not add API RT retrieval or configure any Fabric device. [User; osac PR #1971; Clarify: D23]
-
-For this proposed compatibility path, the selected Fabric's MAC-VRF imports/exports the matching `0:<l2_vni>` and its IP-VRF imports/exports `0:<l3_vni>`. BGP session establishment alone is insufficient: mismatched RT import/export can leave tenant routes unimported and traffic broken. Each claimed pair needs observed route imports and traffic evidence; Arista, Cumulus or FRR defaults are not inferred from a successful host render.
-
-This is an explicit proposed amendment to PR #357 §4.9's `<hub-AS>:<VNI>` Fabric policy and §4.10's omitted CUDN route targets. The two clauses must be reconciled together with Fabric/core/installer owners before claiming compliance with the amended contract. Q5 also records the existing AS/VNI guard and future API handoff decisions.
-
-The intended final integration reads authoritative RT values from the Fabric/controller API once that API and its typed handoff are defined, and uses the returned values instead of continuing the VNI-derived formula. This revision invents no RT API field or import/export schema and does not claim that retrieval is implemented. [Clarify: D24]
-
-DHCP gives the VM its Subnet prefix, recorded gateway and the comma-separated IPv4 resolvers from `CUDN_EVPN_DNS_RESOLVERS`. The Fabric makes those resolvers reachable in each routing domain. The supported hub setting/object path for resolver injection and persistent addressing is a required review decision in Q1; this document does not invent a CUDN DNS field.
-
-#### Owner Subnet and Namespace Identity
-
-One hub network exists per VirtualNetwork because the Fabric supplies one L3 VNI per VN and OVN requires a distinct IP-VRF VNI per network. The first Subnet whose Kubernetes create claims an unowned network becomes owner by API ID. Existing creation timestamp or CR name does not choose the owner. Default-network ordering in core ensures the default Subnet can claim its default VN network first. [Contract: §4.10]
-
-Every other Subnet follows the implementation-limit rule: create/delete without network changes, permanent unsupported overlay apply, and successful absent attachment cleanup. Adding those Subnets does not disable owner VMs or recompute any Subnet's pools. Owner deletion removes its network without handover. A competing create while its owner CR is terminating fails retryably; the owner exists while its Subnet CR exists, including termination.
-
-Created objects carry owner-kind/owner-id labels and applicable tenant/owner-reference annotations. A newly created namespace is `ce-<VirtualNetwork API UUID>`, owned by the VN, with exact tenant and VN-selection labels and `k8s.ovn.org/primary-user-defined-network: ""` at creation. This naming rule never authorizes renaming or replacing an existing namespace. No foreign or legacy namespace is automatically adopted. Different VNs remain distinct even with equal/overlapping CIDRs; every target in one VN consistently returns its recorded shared namespace. Subnet ownership remains separate. [User]
-
-| Object | Owner | Lifecycle |
-|---|---|---|
-| Shared workload namespace | VirtualNetwork API ID | VN create through safe VN delete |
-| `sg-<SecurityGroup API UUID>` NetworkPolicy | SecurityGroup API ID | Group create/update/delete, independent of Subnet existence |
-| CUDN and baseline | Owner Subnet API ID | First-claim realization through owner cleanup; no namespace deletion or sibling handover |
-| Binding membership in each selected group policy | ComputeInstance API ID | Apply before VM creation; remove only that target after VM teardown |
-
-Q2/Q3 must define exact selectors, safe cleanup and conflict/delete predicates. The shared namespace remains while its VN exists; deleting an attachment or owner Subnet does not remove unrelated groups.
-
-#### VirtualNetwork and Subnet Preservation
-
-The namespace and policy changes extend manager realization while preserving the existing VirtualNetwork/Subnet resource contract. Supported retries and restarts reuse persisted identities and allocations rather than rerunning allocation or electing a new owner. [User: 2026-10-28; Clarify: D27]
-
-| Existing state | Preservation requirement |
-|---|---|
-| VirtualNetwork/Subnet API IDs, names, tenant, parent references and immutable spec | Keep the same records and CRs; no delete/recreate, new required field or tenant edit to enable namespace/policy preparation |
-| Recorded managers, Subnet CIDR, gateway, overlay/physical/lbVip ranges and accepted L2/L3 VNIs | Reuse the recorded values; no pool split recomputation, VNI reallocation or manager reselection during reconciliation |
-| Compatible existing CUDN, workload namespace and owner Subnet | Reuse their names and UIDs, selectors, primary network and persisted owner; no second network, namespace replacement, owner election or VM relocation on retry |
-| Existing attachments, workload addresses and sibling Subnets | Keep their references and placement; VN/group preparation does not reboot or recreate VMs, alter addresses or change sibling allocation/availability |
-| Live legacy state or incompatible RT/namespace/IPAM layout | Reject activation before provisioning or cleanup writes; preserve current objects and configuration under the existing lifecycle |
-
-The current role uses a namespace named by the Subnet CR and a CUDN named by the VirtualNetwork CR. That legacy layout is not the proposed VN-owned lifecycle. A rollout must not create a parallel `ce-<VN UUID>` namespace, rewrite ownership/selectors/route targets, or install baseline deny against existing live pods as an automatic conversion. Missing or ambiguous identity is a compatibility failure, never permission to delete or recreate. Internal status may record supported task progress; it does not authorize changes to immutable specs or allocations. PR #357's fresh-install-only activation boundary remains in force. [Codebase: osac-aap/collections/ansible_collections/osac/templates/roles/cudn_evpn/tasks/create_subnet.yaml; User: 2026-10-28]
-
-#### Baseline and SecurityGroup Policy
-
-Implementation status at the recorded source baseline: `cudn_evpn` has no `create_security_group`, `delete_security_group`, `apply_network_attachment` or `delete_network_attachment` task files, and its existing Subnet tasks contain no policy enforcement or VM-ID binding implementation. The following behavior is required implementation work under OSAC-6761. Policy-model review in Q2 selects how it is implemented; it does not defer or waive that work. [Codebase: osac-aap/collections/ansible_collections/osac/templates/roles/cudn_evpn/; User]
-
-Before dependent traffic, baseline protection covers unbound pods on the Subnet network in both directions, including VM pods awaiting a binding and import/other pods. DHCP from the owning manager and Subnet/gateway ARP remain possible; tenant application traffic is denied. Rogue workload DHCP replies are blocked when the backend can enforce that restriction. [Contract: §4.10]
-
-Group creation needs neither a Subnet, a hub network nor a VM. It creates an API-ID-owned unbound policy object. Apply binds the prospective VM pod using exactly `osac.openshift.io/compute-instance-id: <target.id>`; selected groups contribute a union of stateful IPv4 allow rules. Every NetworkPolicy sets `policyTypes: [Ingress, Egress]`, including an empty direction. TCP/UDP destination port ranges, all-protocol rules and remote CIDRs retain their prescribed meaning.
-
-A group has one NetworkPolicy in the VN namespace. Rule fields and the set of bound ComputeInstance API IDs live on that object; an unbound selector must match no pod. Binding changes preserve current rules, while rule updates preserve current membership. Both use resourceVersion-conditional operations and retryable conflicts. Reject stale rule generations instead of overwriting newer accepted rules. No per-namespace copies or attachment reruns are required for a rule update. [User]
-
-A failed replacement must preserve the last-successful policy; validation precedes writes. The initial compiler rejects ICMP permanently because NetworkPolicy cannot match it exactly. Silent omission or broadening is forbidden. Attachment apply can update several selected memberships but succeeds only after all are current and network/baseline gates pass, before core creates a VM. Retry uses the same immutable group selection. Delete runs after the VM is gone and removes only that target's membership.
-
-The [Q2 review proposal](write-protection-review.md#q2-one-object-policy-updates) defines the unbound/bound selectors and separate UID/RV-conditional rule and membership patches. Capacity behavior and ambiguous-response semantics still require review without falsely claiming prior rules remain. One object avoids copy transactions but does not prove packet enforcement or Q3 deletion fencing. Baseline/DHCP exceptions require actual primary-network evidence.
-
-The implementation checklist keeps this work explicit alongside the route-target fix:
-
-| Required work | Completion evidence |
-|---|---|
-| Create/delete unbound API-ID-owned group policy without requiring a Subnet or VM | TC-POLICY-01; idempotent deletion preserves other groups and tenants |
-| Install baseline deny before dependent pod traffic, with the required DHCP/ARP behavior | TC-POLICY-03 on the actual primary EVPN dataplane |
-| Translate ingress and egress rules exactly, including empty directions and explicit unsupported-ICMP failure | TC-POLICY-02 and deployed TC-POLICY-04 |
-| Bind the selected group union by ComputeInstance API ID before VM creation; remove only owned bindings | TC-ATTACH-01/03 and TC-POLICY-04 |
-| Replace the one group policy while preserving concurrent membership/current rules, without stale success or widened access | TC-POLICY-01/05 plus deployed update probes |
-| Preserve tenant ownership and last-successful policy through retries, partial failures and cleanup | TC-POLICY-01/02/05, TC-RETRY-01 and TC-ATTACH-03 |
-
-OSAC-6761 completion requires these policy and binding outcomes. A successful CUDN creation or RT rendering assertion does not establish SecurityGroup enforcement.
-
-#### Retries, Cancellation and Cleanup
-
-Core serializes Subnet tasks per VN and tracks task/manager attempts, retry timing, cancellation and finalizers. The manager takes no Lease/other application lock. It uses atomic backend operations or conflict detection with retryable failures for shared state. Deletes find objects by API ID, handle partial creation and already-absent state, and never depend on finding the original CR name to identify ownership. [Contract: §4.7]
-
-Deletion must win over an outstanding cancelled create/apply: after successful delete, a late write for the same never-reused API ID leaves no state. Q3 must establish the actual backend ordering/tombstone/conflict mechanism before replacing the current safeguards. A missing CR alone is not authority to delete or reallocate someone else's state. Read authoritative API state for owner termination checks.
-
-The manager never reads or modifies VirtualMachines/VMIs. VMaaS owns their removal and address reporting. Core runs network cleanup in dependency order. A namespace is removed only when it is manager-owned for that resource and contains no protected live use; attachment and Subnet cleanup retain the VN-owned namespace and unrelated group state. Only VN delete can remove it after child teardown and reviewed protection checks.
-
-#### Registration and Installation Reference
-
-The approved registration shape, delivered by installation work, is:
+The following complete examples use VN `11111111-1111-4111-8111-111111111111`, owner Subnet `22222222-2222-4222-8222-222222222222`, tenant `tenant-a`, L2 VNI 10100, parent L3 VNI 20001 and Subnet `192.0.2.0/24`. Its saved overlay pool is `.0/25`, physical pool `.128/26`, and ingress VIP pool `.192/26`.
 
 ```yaml
 apiVersion: v1
-kind: ConfigMap
+kind: Namespace
 metadata:
-  name: network-manager-cudn-evpn
-  namespace: <osac-release-namespace>
+  name: ce-11111111-1111-4111-8111-111111111111
   labels:
-    osac.openshift.io/network-k8s-manager: "true"
-immutable: true
-data:
-  name: cudn_evpn
-  ansible_role: osac.templates.cudn_evpn
-  network_type: evpn
+    k8s.ovn.org/primary-user-defined-network: ""
+    osac.openshift.io/tenant: tenant-a
+    osac.openshift.io/virtualnetwork-id: 11111111-1111-4111-8111-111111111111
+    osac.openshift.io/owner-kind: virtualnetwork
+    osac.openshift.io/owner-id: 11111111-1111-4111-8111-111111111111
+  annotations:
+    osac.openshift.io/tenant: tenant-a
+    osac.openshift.io/owner-reference: VirtualNetwork/vn-a
+---
+apiVersion: k8s.ovn.org/v1
+kind: ClusterUserDefinedNetwork
+metadata:
+  name: ce-11111111-1111-4111-8111-111111111111
+  labels:
+    evpn: "true"
+    osac.openshift.io/tenant: tenant-a
+    osac.openshift.io/owner-kind: virtualnetwork
+    osac.openshift.io/owner-id: 11111111-1111-4111-8111-111111111111
+  annotations:
+    osac.openshift.io/tenant: tenant-a
+    osac.openshift.io/owner-reference: VirtualNetwork/vn-a
+    osac.openshift.io/owner-subnet-id: 22222222-2222-4222-8222-222222222222
+spec:
+  namespaceSelector:
+    matchLabels:
+      osac.openshift.io/virtualnetwork-id: 11111111-1111-4111-8111-111111111111
+      osac.openshift.io/tenant: tenant-a
+  network:
+    topology: Layer2
+    transport: EVPN
+    layer2:
+      role: Primary
+      mtu: 1500
+      subnets: [192.0.2.0/24]
+      defaultGatewayIPs: [192.0.2.1]
+      infrastructureSubnets: [192.0.2.1/32, 192.0.2.2/32]
+      reservedSubnets: [192.0.2.128/25]
+      ipam:
+        mode: Enabled
+        lifecycle: Persistent
+    evpn:
+      vtep: tenant-vtep
+      macVRF:
+        vni: 10100
+        routeTarget: "0:10100"
+      ipVRF:
+        vni: 20001
+        routeTarget: "0:20001"
 ```
 
-Networking job pods read `network-fulfillment-ig` ConfigMap/Secret through the instance group. The approved Helm settings are `aap.instanceGroups.networkFulfillment.enabled`, `.config` and `.secret`; `.config.CUDN_EVPN_DNS_RESOLVERS` holds the agreed comma-separated resolver addresses. The Secret is required and may be empty. These are OSAC-6769 target examples; rendering them alone does not establish rollout or runtime behavior. Hub AS/VTEP settings stay in the installed FRRConfiguration/VTEP and Fabric settings, with no second core copy. Q4 resolves exact prerequisite discovery.
+`POST` with that deterministic CUDN name is the atomic claim: only one request can create it. On AlreadyExists, read from the API server and verify tenant, VN identity, owner Subnet, saved pools and VNIs. The same live owner may reconcile; a different owner must not overwrite it. A terminating CUDN or owner Subnet holds the claim and causes a retryable conflict. Deletion uses UID/RV preconditions and waits for authoritative absence before releasing the claim. This prevents concurrent owner takeover; it does not prove safety against an already-issued create after deletion, which remains the explicit blocker below.
 
-The administrator verifies peering for every node, underlay VTEP routing, VXLAN UDP 4789, ingress replication, and node/Fabric frame capacity of at least 1550 bytes for 1500-byte workloads. The installed VTEP and FRR/OVN prerequisites are checked explicitly; a missing or malformed setting/prerequisite fails retryably so a corrected rollout recovers the operation.
+Compute the minimal reserved CIDR cover outside the overlay pool, subtracting infrastructure reservations so the lists are disjoint. The gateway is always reserved; another infrastructure address comes only from the saved overlay range. Exclude network/broadcast/gateway/infrastructure from workload allocation. If there are more than 25 `reservedSubnets` entries, fail permanently with `cudn_evpn reservedSubnets exceeds 25 entries`; do not merge across a permitted workload address or change saved IPAM. Set MTU 1500 explicitly. The [OVN API](https://ovn-kubernetes.io/1.4/api-reference/userdefinednetwork-api-spec/) defines these fields and limits; its schema support and deployed behavior must both be validated for the selected platform.
 
-#### Interface Changes and Implementation Delta
+`ipam.lifecycle: Persistent` selects OVN IPAMClaims; VMaaS/KubeVirt owns claim association and retention across restart/live migration. The manager must not allocate another address on retry or remove VM-owned claims. See [OVN persistent IP lifecycle](https://ovn-kubernetes.io/master/features/multiple-networks/multi-homing/#persistent-ip-addresses-for-virtualization-workloads).
 
-| ID | Manager interface/change | Owning boundary |
-|---|---|---|
-| IC-1 | Immutable registration, supported type and environment/prerequisite consumption | Installation/core supply; manager consumes |
-| IC-2 | Eight task inputs, identities, results/errors and proposed VN namespace lifecycle | Manager role/core dispatch; shared VN no-op amendment needs review |
-| IC-3 | Typed EVPN segment, recorded IPAM, gateway/DNS/MTU and CUDN realization, including the proposed explicit 0:VNI exception | Manager consumes Fabric/core data; shared RT amendment needs review |
-| IC-4 | Owner-Subnet claim/release, no handover, cancellation and owned cleanup | Manager backend with core serialization |
-| IC-5 | Subnet baseline and one exact policy per group with conditional rule/binding updates in the VN namespace | Manager policy objects; Q2/Q3 predicates remain |
-| IC-6 | Namespace-before-VM, VM-ID binding, namespace-only result and address stability | Manager attachment; VMaaS consumer |
+#### DHCP resolvers
 
-| Current source at the recorded OSAC main | Required manager delta |
+OVN's Layer2 VM DHCP obtains resolver addresses from the DNS Service selected by its `dns-service-namespace` / `dns-service-name` configuration. There is no CUDN DNS field. Required manager settings `CUDN_EVPN_DNS_SERVICE_NAMESPACE` and `CUDN_EVPN_DNS_SERVICE_NAME` identify that existing Service; no namespace/name default is assumed. The job reads only that Service through the hub API. The installer must identify and validate that supported platform configuration and compare its IPv4 Service addresses with the ordered, canonical `CUDN_EVPN_DNS_RESOLVERS` list before activation. The manager checks the same installed Service/profile; a mismatch fails retryably before writes, never silently substitutes resolvers or patches OVN's database. The chosen pair must demonstrate guest DHCP delivering the agreed list and reaching it from the tenant routing domain. Arbitrary external resolver injection beyond this supported path requires a separately reviewed platform mechanism; it is not implemented by inventing a field. [OVN DHCP DNS configuration](https://ovn-kubernetes.io/master/features/multiple-networks/multi-homing/#configuring-dns-server), [DHCP Service lookup](https://github.com/ovn-kubernetes/ovn-kubernetes/blob/master/go-controller/pkg/kubevirt/dhcp.go).
+
+#### Baseline and group manifests
+
+The VN namespace is prepared before workloads. Once a Subnet owns the network, this baseline isolates all pods in both directions; selected group policies add permitted application traffic. DHCP exceptions permit the platform's DHCP exchange; OVN handles ARP outside these IPv4 NetworkPolicy rules. Actual primary-network enforcement and DHCP/ARP behavior require deployed checks.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-22222222-2222-4222-8222-222222222222
+  namespace: ce-11111111-1111-4111-8111-111111111111
+  labels:
+    osac.openshift.io/owner-kind: subnet
+    osac.openshift.io/owner-id: 22222222-2222-4222-8222-222222222222
+  annotations:
+    osac.openshift.io/tenant: tenant-a
+    osac.openshift.io/owner-reference: Subnet/subnet-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports: [{protocol: UDP, port: 68}]
+  egress:
+    - ports: [{protocol: UDP, port: 67}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sg-33333333-3333-4333-8333-333333333333
+  namespace: ce-11111111-1111-4111-8111-111111111111
+  labels:
+    osac.openshift.io/owner-kind: securitygroup
+    osac.openshift.io/owner-id: 33333333-3333-4333-8333-333333333333
+  annotations:
+    osac.openshift.io/tenant: tenant-a
+    osac.openshift.io/owner-reference: SecurityGroup/web
+    osac.openshift.io/rule-generation: "1"
+    osac.openshift.io/rule-digest: "sha256:d4202eb8e1f5a8e9a0468962d2b3a33ada5c3fbac251615bf92fbb86691bfd85"
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: osac.openshift.io/compute-instance-id, operator: Exists}
+      - {key: osac.openshift.io/compute-instance-id, operator: DoesNotExist}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ipBlock: {cidr: 192.0.2.0/24}}]
+      ports: [{protocol: TCP, port: 443}]
+  egress: []
+```
+
+The rule digest is SHA-256 of canonical JSON for ingress, egress and policyTypes, with sorted object keys and compact separators after deterministic rule normalization; it excludes selector membership and metadata. The unbound selector is deliberately contradictory, never empty. Binding replaces it with a single `In` expression containing sorted unique ComputeInstance API IDs. One group object serves every bound target; namespace and group lifetime do not depend on an owner Subnet existing. TCP/UDP port ranges use `port`/`endPort`; `all` omits the port restriction while retaining its peer CIDR. An explicit ICMP rule fails as documented in API Extensions and the PRD. Reject unsupported/capacity-limited rules before mutating the policy.
+
+#### Conditional rule replacement and membership
+
+Use only non-creating `PATCH` with media type `application/json-patch+json` on an existing policy. Every fixed patch tests `/metadata/uid` and `/metadata/resourceVersion`. Rule updates replace ingress, egress, policyTypes and rule generation/digest together, preserving the selector. Bind/unbind changes only the selector, preserving current rules and other targets. Verify ownership and current source generation before constructing the patch. Reject an older generation or an equal generation with another digest. Conflict causes a fresh authorized reconciliation, never force apply or delete/recreate.
+
+On 404, a stale bind/update fails retryably and cannot create its target. A legitimate group create is a separate authorized task; it is not a fallback for a failed patch. Never use Server-Side Apply for this operation. If the target ID was already absent, unbind is idempotent and performs no patch; an absent object has no RV to advance. When cleanup must invalidate a known pending fixed patch against an existing policy, write a changed membership revision even if membership was already absent. If the policy has disappeared, that fixed non-creating patch already fails. These arguments apply to patches only, not POSTs.
+
+A definitively rejected patch keeps the previous rules. If a response is lost, its outcome is unknown: retain pending/retryable status and read/reconcile the desired generation and digest without claiming rollback. Do not report successful binding against stale rules or let an older fixed patch overwrite a newer generation. Prove the conflict, missing-target, response-loss and restart traces with real API requests before implementation acceptance. [Kubernetes conditional updates and PATCH types](https://kubernetes.io/docs/reference/using-api/api-concepts/#updates-to-existing-resources).
+
+#### Interface Changes
+
+The following identifiers are local design-to-test mappings, not API fields or Jira acceptance criteria.
+
+| ID | Boundary |
 |---|---|
-| Only create_subnet/delete_subnet public task files | Add VN, group and attachment pairs; keep successful no-output behavior explicit |
-| Legacy subnet/l2_vni/l3_vni/fabric_reserved_range variables and CR annotation/name lookups | Consume minimal snapshots, explicit tenant, typed segment and recorded IPAM |
-| Inferred gateway/infrastructure/exclusion ranges | Preserve core's plan, Fabric gateway and overlay-only allocation |
-| Oldest eligible owner, Lease and next-owner paths | First claim by API ID, backend conflict safety, release without handover |
-| CUDN template with installed-name assumption and no full DNS/policy/attachment contract | Validate prerequisites and implement reviewed Q1–Q4 mechanisms |
-| Existing render/task/delete-order regressions | Extend exact task contracts and real Kind boundary coverage; retain separately owned deployed-pair evidence |
+| IC-1 | Registration and installer-owned prerequisites/settings |
+| IC-2 | Eight saved task inputs/results and VN namespace lifetime |
+| IC-3 | VN L3 / Subnet L2 handoff, CUDN, gateway, pools, DNS and MTU |
+| IC-4 | Atomic owner claim, cancellation and strict owned cleanup |
+| IC-5 | Baseline, exact group policy and conditional rule/membership updates |
+| IC-6 | Pre-VM binding, namespace result and persistent-address workload integration |
 
-The [open RT PR #1971](https://github.com/osac-project/osac/pull/1971) supplies the two explicit `0:VNI` fields and a rendering assertion. Retain that behavior in the proposed manager alignment and coordinate the matching shared/Fabric contract amendment at activation. The fields are absent from the recorded upstream main; this revision does not claim the PR is merged or that its host-only change establishes a supported Fabric pair.
-
-Shared-core APIs, generic task dispatch, saved IPAM, VM labels/l2bridge and finalizers remain OSAC-6766 work. OSAC-5974/5976 are obsolete tracking. Manager changes must activate with compatible core/installer/Fabric consumers; a manager-only role cannot establish deployed adoption by itself.
-
-#### Cross-Functional Impact Assessment
-
-| Surface | Required work/assessment | Existing tracking and assignment status |
-|---|---|---|
-| Installer/Enclave | Register compatible managers, deliver DNS/settings/credentials, validate services/address plan and fresh-install prerequisites | OSAC-6769 exists; it was unassigned when inspected. Manager-specific details coordinate with Q4. |
-| Enclave plugin | Consume the installer schema/version and preserve supported types/defaults/secret handling | ENCLAVE-02 is a draft in OSAC-6766; repository/version and executable tests remain to be identified. No created/assigned child is claimed. |
-| Wizard | Verify schema-driven controls and refusal/errors through Wizard → plugin → installer | ENCLAVE-03 is a draft dependent on the plugin work. Standard schema fields do not imply a custom renderer. |
-| Console UI | Consume shared networking state and owner-limit/policy failure diagnostics; tenant forms keep ordinary Subnet/group references | UI integration drafts under OSAC-6766 reference OSAC-6762 as proposed parent; no implementation assignment is claimed here. |
-| UX | Review installation selection/prerequisite errors and tenant unsupported-attachment/policy status journeys | OSAC-6766 references OSAC-5932/5933 for design follow-up. Named owner requests remain in the Jira documentation task. |
-
-The Enclave pipeline is installer schema → plugin consumption → Wizard rendering/validation. Runtime installation work is required; consumer/plugin and UX verification are conditional scopes that must retain explicit tracking and requested ownership. These drafts and this assessment do not create or assign Jira issues. The active core epic supersedes OSAC-5980's former mixed scope; any needed replacement work remains in the explicit drafts above.
+Manager implementation belongs to [OSAC-6761](https://redhat.atlassian.net/browse/OSAC-6761), core/API consumers to [OSAC-6766](https://redhat.atlassian.net/browse/OSAC-6766) / [OSAC-6768](https://redhat.atlassian.net/browse/OSAC-6768), installation to [OSAC-6769](https://redhat.atlassian.net/browse/OSAC-6769). The installer schema must be consumed and validated through Enclave plugin and Wizard; tenant forms retain ordinary Subnet and SecurityGroup references. These are component dependencies, not assignment-status claims.
 
 ### Security Considerations
 
-Validate snapshot identities, tenant/parent consistency, segment types and IPAM before writes. Use the hub service account and least permissions for the manager's concrete object model; no networking task edits OSAC workload/networking CRs or VM resources. Preserve tenant/owner annotations and owner-kind/owner-id labels on created resources. Foreign identity or ownership mismatches fail without modifying the object.
-
-Baseline protection and selected policy precede tenant traffic. Equal CIDRs in different VNs remain isolated by stable network/owner identity and separate routing domains. Secrets stay in the environment and are excluded from snapshots, artifacts and diagnostics. Rescue code never emits `ansible_failed_result`, invocation data or credentials.
+Validate tenant, API-ID ownership, parent VN, saved pools and VNIs before writes. Every created Namespace, CUDN and policy carries tenant/owner-reference annotations and owner-kind/owner-id labels as shown above. Foreign identity fails without mutation. Preserve tenant isolation even for overlapping VN CIDRs and sanitize logs/results. No task reads secrets from workload resources or accesses VM/VMI objects.
 
 ### Failure Handling and Recovery
 
-| Failure | Required behavior and observable result |
-|---|---|
-| Missing/malformed DNS setting or missing VTEP/FRR/hub prerequisite | Failed play with sanitized retryable error naming the setting/prerequisite; core retries after configuration repair |
-| Hub AS/VNI combination cannot be represented | Permanent failure naming the VNI rule before network mutation |
-| Non-owner Subnet overlay apply | Permanent owner-limit failure; no VM/attachment artifacts created; Subnet tasks and absent cleanup succeed |
-| Owner terminating, backend API conflict or transient timeout | Retryable failure; preserve current owned state and converge on retry |
-| Unsupported ICMP or unrepresentable rule set | Permanent failure before replacement; retain last successful policy |
-| Partial create/cancel/restart | Same API IDs and recorded input converge without duplicate network, address or policy; delete handles partial state and defeats late writes |
-| Delete backend failure | Failed cleanup; core retains finalizer and retries regardless of error retryability |
-| Activation over live legacy VN/Subnet state or incompatible recorded layout | Core/installer preflight refuses the new lifecycle before dispatch or mutation; do not reset records, rewrite RTs/selectors, create a replacement namespace or run cleanup |
-| Task success but wrong Fabric routes/underlay | Connectivity may still fail; administrator uses recorded segment, CUDN and FRR/Fabric diagnostics; real-pair validation is required |
+Read authoritative API state for ownership/termination and use conditional patches/deletes. Missing prerequisites and conflicts are retryable. Unsupported policy/attachment and invalid input are final errors. Preserve previous allocations and UIDs on compatible retries. Core owns dispatch serialization, cancellation and finalizers; manager application locks/Leases are not introduced.
 
-Core's accepted retry schedule and AAP timeout/cancellation rules apply. Managers do not start their own retry loops that conceal task failure or report a successful result after a failed prerequisite.
+**Strict deletion blocker:** no native Kubernetes primitive has yet been demonstrated to prevent an already-issued Namespace/CUDN/policy POST from recreating an object after successful deletion. Deterministic names and UID/RV checks solve owner conflicts and stale patches, not new POSTs. A separate journal, preflight tombstone read, ended AAP job, absent GET or elapsed timeout does not establish settlement. Keep delete pending and retain the finalizer whenever that outcome is unknown. Do not replace the existing safeguards or activate this lifecycle until a backend ordering/fencing mechanism and restart recovery are reviewed and proven. Inert retained objects and eventual cleanup are not selected; the strict complete-removal guarantee remains.
 
 ### RBAC / Tenancy
 
-Tenants use OSAC APIs and cannot configure manager registrations, VNIs or peering. The manager uses the networking job's hub identity. Created namespaces carry the exact `osac.openshift.io/tenant` label checked by core and the applicable tenant/owner annotations; selection and cleanup also include stable resource ownership.
+The networking job service account requires the following exact resource classes. A ClusterRoleBinding grants the listed verbs to the trusted job service account. NetworkPolicy permissions are consequently effective across namespaces, including dynamically created VN namespaces; Kubernetes RBAC does not restrict them by tenant labels. Provider admission restrictions and manager ownership checks must reject writes outside managed VN namespaces. Namespace create/delete and CUDN permissions are cluster-scoped; this privilege must be reviewed explicitly.
 
-The reviewed object model must enumerate required cluster-scoped CUDN/VTEP reads, namespace/policy/state writes and networking-namespace reads without granting VM write access. Core/installer admission and tenant authorization remain separately owned. A namespace or an equal CIDR alone is not a routing or cleanup isolation key.
+| API group / resource | Scope | Verbs | Purpose |
+|---|---|---|---|
+| core / namespaces | Cluster | get, list, create, patch, delete | VN namespace lifetime and verified cleanup |
+| k8s.ovn.org / clusteruserdefinednetworks | Cluster | get, list, watch, create, patch, delete | Atomic claim, realization, readiness, conditional cleanup |
+| networking.k8s.io / networkpolicies | Namespaced, granted cluster-wide | get, list, create, patch, delete | Baseline/group lifetime and conditional updates |
+| k8s.ovn.org / vteps, routeadvertisements | Cluster | get, list | Validate installed `tenant-vtep` and advertisement selection |
+| frrk8s.metallb.io / frrconfigurations | Installed FRR namespace | get, list | Read prerequisite configuration; no peering mutation |
+| core / services | Selected DNS namespace | get | Verify installed DHCP resolver source |
+| osac.openshift.io / subnets, virtualnetworks | Networking namespace | get | Authoritative owner/termination checks only |
+
+No permissions are granted for OSAC CR mutation/status, VM/VMI, pod or IPAMClaim mutation, Secrets, Leases, NMState or FRR writes. The installer owns prerequisite mutations. If installed API groups differ, fail preflight rather than widening permissions implicitly.
 
 ### Observability and Monitoring
 
-Use core's existing task/manager attempt state and resource condition messages for prerequisite, unsupported-path and policy failures. Operator logs identify manager/task, owner API ID and AAP job ID without credentials; tenant errors do not disclose another resource's IDs or VNIs. No new metric names or event reasons are introduced by this manager document.
-
-Record the CUDN's actual readiness conditions, namespace/owner labels, recorded segment/IPAM and paired platform versions during validation. Task success is reported separately from BGP/packet-path evidence.
+Use existing task/job status and structured logs keyed by task, manager, resource API ID and attempt. Record prerequisite failures, rejected foreign ownership, owner conflicts, conditional-write conflicts and unresolved cleanup. Expose sanitized failure reasons and pending retry state; never present unknown cleanup as success. New metrics are not required by this change. Operational duration/retry trends can use existing job telemetry; packet and supported-pair results belong to the validation report.
 
 ### Risks and Mitigations
 
-| Risk | Mitigation or required closure |
+| Risk | Mitigation |
 |---|---|
-| Provisional real Fabric gateway/route behavior | Execute the real Netris pair and record route types/RT imports, gateway ARP and routed traffic; Q4 |
-| Host uses 0:VNI while Fabric still imports/exports the baseline hub-AS RT | Review the shared amendment and matching Fabric policy, then verify route import and packet forwarding; Q5 |
-| DNS or persistent addresses unavailable through supported hub APIs | Resolve supported mechanism/versions and execute DHCP/restart/migration checks; Q1 |
-| Rule update loses concurrent membership or binding uses stale rules | Review one-object generation/resourceVersion predicates, ambiguous-write outcomes and update/bind conflicts; prove actual enforcement; Q2 |
-| Replacing manager locks weakens delete safety | Establish backend conflict/tombstone semantics before changing ownership paths; Q3 |
-| Mixed legacy/new core, installer and role contracts | Coordinate activation and exact input/result fixtures under OSAC-6766/6769; no ad hoc legacy fallback |
-
-Connectivity & Fabric maintainers review tenant policy/ownership behavior with the OVN/KubeVirt and lifecycle owners. The unresolved mechanism questions are implementation gates, while all required outcomes remain in scope.
+| An outstanding create resurrects deleted state | Block lifecycle activation on the missing enforced ordering/fence proof; retain finalizers on unknown outcomes |
+| Policies appear present without primary-network enforcement | Require actual OVN traffic, DHCP/ARP, rule-update and pre-boot tests |
+| Wrong advertisement selector or mismatched RTs silently drops routes | Require `evpn: "true"`, installer readiness and per-pair route/traffic evidence |
+| Unsupported DNS configuration or fragmented exclusion cover | Validate installed DNS delivery and the 25-entry limit before activation/mutation |
+| New lifecycle rewrites legacy state | Reject activation before any write; preserve records, UIDs, allocations, RTs and workloads |
 
 ### Drawbacks
 
-The current one-network-per-VN limit leaves sibling overlay pools unused and limits VM placement. The shared namespace changes placement and VN lifecycle from the approved no-op baseline; per-group binding size and deletion races still need explicit guarantees. Installation still requires provider peering and a qualifying lab, so a Kind-only check cannot establish deployable support. These costs are accepted only with clear tenant diagnostics and the validation gates below.
+One VM-capable Subnet limits placement within a VN. One policy object avoids duplicated rule copies but couples rule and membership writes through API conflicts. Cluster-scoped Namespace/CUDN privileges increase the impact of a manager bug. Platform-specific DNS and strict deletion recovery require more evidence than rendering alone; these costs remain prerequisites for supported activation.
 
 ## Alternatives (Not Implemented)
 
-| Alternative | Trade-off and disposition |
-|---|---|
-| Keep the legacy Fabric-specific output/CR-name workflow | Reuses current dispatch but fails the approved typed input, stable ownership, policy and VM preparation contracts |
-| Reject every second Subnet in fulfillment | Simple global validation, but prevents allowed physical Subnets and cannot determine which Subnet claimed the hub network |
-| Hand the network to a sibling after owner deletion | Preserves a hub object but changes the approved owner/release behavior and risks using the wrong address plan/segment |
-| Retain only auto-generated hub-AS RTs | Preserves the PR #357 baseline, but does not carry the user-requested PR #1971 compatibility fix; the explicit-RT proposal requires shared review |
-| Consume controller RT API values immediately | The intended final direction, but the current handoff defines only VNIs; API/schema availability and transport must be agreed before implementation |
-| Keep per-attachment namespaces and policy copies | Requires another reviewed backend or contract semantics for atomic group updates; a copy loop is insufficient |
-| Patch the VM after it boots | Creates a traffic/readiness window and crosses VMaaS ownership; attachment preparation must precede VM creation |
-| Have each manager build its own address split | Avoids core handoff but creates competing allocations and violates the stored-plan contract |
-
-Q1/Q3/Q4 address platform mechanisms and lifecycle evidence. Q2 includes the selected VN namespace lifecycle amendment and remaining exact policy guarantees. Q5 reviews the explicit-RT proposal and later API handoff; no vendor-specific runtime mode is added.
+- Per-attachment namespaces and policy copies add duplicate updates and conflict with groups existing before any Subnet; use one VN namespace and one policy per group.
+- Reuse of a sibling Subnet's owner network silently attaches VMs to the wrong CIDR; reject the unsupported attachment.
+- Force apply or delete/recreate on policy conflict can lose membership or isolation; use non-creating conditional JSON Patch.
+- A separate coordinator journal or manager Lease alone cannot fence an already-issued POST; neither is selected as the deletion solution.
+- Direct OVN database writes for DNS/ICMP bypass the supported API contract; validate the supported DNS path and explicitly reject unsupported ICMP.
 
 ## Open Questions
 
-The full questions, owners, impact and closure evidence are maintained in [clarifications](clarifications.md#open-manager-realization-questions):
+**Backend deletion fence and recovery — implementation blocker.** Connectivity/Fabric and core lifecycle maintainers must select and demonstrate a backend primitive that prevents post-success recreation for Namespace, CUDN and policy creates, including crash-before-send and lost-response ambiguity. Closure requires reviewed state transitions and real-API race/restart evidence. It must preserve strict removal, stable API IDs and the no-manager-lock boundary. This decision must close before implementation acceptance and activation; no calendar date is invented.
 
-1. **Q1 — DNS and address persistence.** Connectivity & Fabric with OVN/KubeVirt owners: select supported APIs/versions for required DHCP and restart/migration behavior.
-2. **Q2 — Policy objects and concurrent replacement/bind.** Connectivity & Fabric with OVN policy owners: review D26's VN/Subnet lifecycle amendment, exact one-object selector/generation/conflict predicates, ambiguous write outcomes, DHCP/ARP behavior and permanent ICMP rejection.
-3. **Q3 — Durable ownership and deletion.** Manager and core lifecycle owners: select atomic claim/delete-wins predicates without manager locks. The [recovery assessment](write-protection-review.md#q3-already-issued-creates) rules out a separate journal/worker as a sufficient fence by itself; already-issued POSTs remain the unresolved boundary.
-4. **Q4 — Installation discovery and real pair.** Connectivity & Fabric/Enclave with Netris owners: confirm VTEP/AS discovery and actual gateway/RT/route interoperability.
-5. **Q5 — RT contract amendment and API handoff.** Connectivity & Fabric with Fabric/controller owners: reconcile explicit 0:VNI host/Fabric duties, the existing shared AS/VNI guard and the later authoritative API values.
-
-These decisions require review before finalizing OSAC-6761 implementation acceptance. None waives the corresponding outcome.
+**Installed platform qualification.** Connectivity/Fabric and platform maintainers must record the supported OVN/KubeVirt/FRR versions and the installed DNS-Service configuration, admission, persistent-IP and primary-policy results. The object model and conditional-write method above are selected; a version/profile or DNS configuration that cannot realize them fails readiness. No supported pair is claimed before the report exists.
 
 ## Test Plan
 
-The [test plan](testplan.md) maps active cases to PRD scope, IC-1–IC-6, execution tier, owner and fixture boundary. It distinguishes role checks, real Kubernetes API behavior, deployed traffic and unexecuted evidence.
+The [test plan](testplan.md) defines case metadata, source outcomes, IC-1–IC-6 coverage, numbered steps, fixtures, priorities and planned entry points. Cases blocked by the deletion mechanism remain explicit; required skips never count as a pass.
 
 ### Unit Tests
 
-Cover exact snapshot/tenant/task input validation, canonical IPAM exclusions including empty lists, integer VNI/AS limits, explicit MAC/IP RTs derived from their respective VNIs, rule validation and sanitized error/no-output/result shapes. Preserve PR #1971's exact rendering assertion. Keep other existing rendering/delete regressions where their behavioral target remains current; retire assertions for superseded API rejection, legacy output envelopes and manager-owned VM deletion.
+Extend `osac-aap/tests/unit/test_cudn_evpn_role.py` (`_render_cudn`, `_run_role_with_inputs`) and deletion-order regressions for exact input/result validation, integer VNI range without ASN coupling, RTs, selector/metadata rendering, IPAM exclusion count, policy compiler restrictions and owned cleanup.
 
 ### Integration Tests
 
-DEV-owned Ansible tasks against real Kind cover all eight entry points, idempotency, namespace ownership, non-owner behavior, claim/delete races, partial state, one-object policy/binding conflicts and foreign-resource preservation. Include VN namespace creation, group creation before a Subnet, namespace retention across attachment/Subnet cleanup and final VN namespace deletion. Schema fixtures and fake prerequisites do not establish OVN packet enforcement. Shared-core fixtures prove typed dispatch/acceptance and the namespace/policy gate before VM creation. TC-COMPAT-01–03 additionally verify the existing VN/Subnet API contract, stable backend identity/allocations on supported retries, and refusal of legacy activation before any mutation.
+Add `osac-aap/tests/integration/targets/cudn_evpn/tasks/baseline.yml` and independently executed race scenarios to the existing Kind harness; register them in `run_tests.sh`, making `make -C osac-aap test` the aggregate entry point. These planned targets must exercise real Namespace/CUDN/policy API operations, ownership conflicts, non-creating patches and restart traces. CRD/prerequisite fixtures must be identified as fakes; they do not prove OVN, KubeVirt, FRR or Fabric traffic. Shared core and installer suites validate typed dispatch, saved status and preflight separately.
 
 ### E2E Tests
 
-QE-owned deployed journeys use actual fulfillment/operator/AAP, OVN/FRR/KubeVirt and real Fabric. Prove DHCP pools/gateway/DNS, baseline and selected-group traffic, permitted VM-to-physical L2 and same-VN routed traffic, restart/live-migration address stability, isolation and deletion. Record routes actually used; a fixed type-5 requirement and a latency SLA are not inferred. Repeat supported reconciliation with running workloads and compare VN/Subnet identity, recorded pools/VNIs, namespace/CUDN UIDs, guest addresses and permitted/denied probes before and after. The common conformance runner's host/invocation remains OSAC-6766 work.
+Add `tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` for the full deployed journey, using the existing `grpc`, `k8s_hub_client`, `k8s_virt_client`, `vm_template` fixtures and `wait_for_subnet_ready`, `wait_for_vmi_ip`, `poll_until` helpers. The planned invocation is `uv run pytest -n 0 tests/e2e/vmaas/regression/test_cudn_evpn_networking.py` from the OSAC root once implemented. Record exact versions, commands and real/faked dependencies. Prove DHCP gateway/DNS, denied/allowed traffic, restart/live-migration address stability and safe teardown with real Fabric, initially Netris; every additional pair requires its own report.
 
 ## Graduation Criteria
 
-The proposed release target requires reviewed Q1–Q5 closure, acceptance of the shared RT and VN namespace lifecycle amendments, matching manager/core/installer/Fabric contracts, passing applicable component checks, and a recorded real Netris VM-profile result. A supported-pair report includes versions, emitted/imported/exported RTs, commands, real/mocked/omitted dependencies and pass/fail/skip results; required skips are not passes. Document approval and a successful role render do not meet runtime graduation.
-
-No earlier release-number promise is carried forward from historical phase labels. Release ownership follows the active Feature/core tracking; readiness is measured by the outcomes above.
+The prerequisite manager-contract amendment is approved; core, manager, installer and Fabric inputs/results agree; installed platform qualification and the strict deletion mechanism are complete; component tests and the real Netris VM-profile journey pass. Publish a report with versions, RT imports/exports, observed routes, commands and pass/fail/skip results. Documentation approval or a rendered manifest is insufficient runtime evidence. Update administrator installation/troubleshooting and tenant ICMP/owner-limit guidance before release.
 
 ## Upgrade / Downgrade Strategy
 
-PR #357 supports fresh installation of this contract. In-place adoption of legacy manager state and networking minor-release upgrades remain unsupported. Preserving existing APIs/state does not activate the new lifecycle on legacy networks. Core/installer preflight must reject that activation before changing configuration, resetting readiness, dispatching new manager tasks or deleting backend state. Existing VirtualNetwork/Subnet records, CRs, namespaces, CUDNs, allocations, selectors, route targets and live workloads retain their current identities and configuration.
+Fresh activation only. Existing live legacy VN/Subnet records, CRs, namespaces, CUDNs, selectors, RTs, address pools and workloads remain unchanged. Core/installer rejects activation before configuration changes, readiness resets, task dispatch or cleanup. No automatic migration, rename, ownership handover or network recreation is permitted.
 
-For an installation freshly activated with the reviewed namespace/policy lifecycle, supported retries/restarts reuse its saved manager identities, owner claim, segment, IPAM, namespace and CUDN; adding VN namespace and group-policy task files is not a reason to replay completed provisioning or reallocate a Subnet. The explicit RT requirement applies to fresh activation of the amended contract. An existing live CUDN with different RTs is not patched automatically; Q5 requires a separately reviewed host/Fabric transition before any such future adoption. Cleanup remains an explicit dependency-ordered lifecycle action, never an upgrade prerequisite performed automatically. [User: 2026-10-28; Clarify: D27]
+On freshly activated compatible installations, retries/restarts preserve saved manager identities, namespace/CUDN UIDs, owner, IPAM, VNIs and guest addresses. New task files do not trigger provisioning replay or reallocation. In-place adoption or a different minor networking contract requires a separate reviewed transition; supported patch updates must retain these invariants.
 
 ## Version Skew Strategy
 
-Core snapshots/results, installer registration/environment, manager role and Fabric behavior must agree before activation. A legacy role with only Subnet tasks cannot satisfy the new attachment/policy gate. A mixed deployment must surface an explicit missing-task/prerequisite/input diagnostic and must not fabricate readiness or fall back to Netris/legacy variables. Runtime compatibility checks and lifecycle tracking belong to shared core.
+Activate only a compatible core/installer/manager/Fabric set. A legacy Subnet-only role cannot satisfy the namespace/policy gate. Reject a missing task, wrong output shape or unsupported prerequisite explicitly; never fall back to legacy variables or reset live state. Keep the current supported configuration active when the new preflight fails.
 
 ## Support Procedures
 
-Inspect the task/manager attempt and sanitized error first. Compare the accepted segment and stored IPAM with the CUDN, namespace tenant/owner labels and installed VTEP/FRR prerequisites. FRR read-only diagnostics include `show evpn vni`, `show bgp l2vpn evpn summary` and `show bgp l2vpn evpn`; compare their actual RT imports and routes with Fabric state and confirm gateway ARP and resolver reachability.
-
-Repair a missing setting/prerequisite through the installation configuration and let core retry. A final unsupported-path/policy failure requires corrected/recreated input through the supported lifecycle; do not alter immutable inputs under running workloads. Delete failures retain finalizers until owned cleanup succeeds.
-
-For an apparent stale VRF after CUDN deletion, confirm no live CUDN/attachment owns it and gather node/OVN/FRR evidence for the platform maintainers. Routine manager cleanup never restarts networking pods or deletes host VRFs. Any platform recovery procedure must account for other workloads on the node.
-
-Changing/removing manager registration is not a safe way to disable an active network: resources retain recorded manager identities for cleanup. Use the approved dependency-ordered workload/network teardown before replacing the deployment. Task resumption must preserve owned state and cannot be assumed safe across an unsupported contract change.
-
-## Infrastructure Needed
-
-The manager work needs the existing AAP Ansible/Kind component harness plus a qualifying OpenShift hub with OVN EVPN, FRR-K8s, KubeVirt/live migration, DNS reachability and a real Netris EVPN Fabric. The real-pair report must record node/Fabric underlay capacity, peering/VTEP/VNI configuration and policy probes. The generic networking conformance suite and installation/plugin/Wizard consumers remain separately tracked prerequisites; no nonexistent command or lab result is claimed.
+Inspect the recorded task input/job attempt, installed EVPN values, `tenant-vtep`, `osac-evpn`, CUDN conditions for the current generation, owner annotations and conditional-write errors. Compare matching RTs and actual BGP/routes before diagnosing application traffic. For unresolved cleanup, retain the finalizer and collect request/commit history; do not remove objects or retry with forced ownership to manufacture success. Correct prerequisites and allow normal reconciliation; unsupported activation leaves existing networks in place.
 
 ---
 
 ## Provenance
 
 Authored: revise @ design 0.11.5 - 1c6e8de, workspace codex/cudn-evpn-route-targets @ 38d18d944 (7 behind origin/main)
-Final: revise @ design 0.11.5 - 1c6e8de, workspace codex/osac-6761-cudn-evpn-contract @ a6aa33f0b
+Final: respond @ design 0.11.5 - 1c6e8de, workspace codex/osac-6761-cudn-evpn-contract @ a6aa33f0b (79 behind origin/main)
 
-> Context changed between revise and revise.
-
+> Context changed between revise and respond.
+>
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"1c6e8de","source_repo":"a6aa33f0b","source_repo_branch":"codex/osac-6761-cudn-evpn-contract","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"1c6e8de","source_repo":"a6aa33f0b","source_repo_branch":"codex/osac-6761-cudn-evpn-contract","commits_behind_main":79,"commits_ahead_main":2,"main_ref":"main","phases":["revise","revise","revise","revise","revise","revise","revise","revise","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":true} -->
